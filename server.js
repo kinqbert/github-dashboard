@@ -13,7 +13,6 @@ const SECTIONS = {
     'is:pr is:open archived:false user-review-requested:@me',
     'is:pr is:open archived:false reviewed-by:@me -author:@me',
   ],
-  mentioned: ['is:pr is:open archived:false mentions:@me -author:@me'],
 };
 
 const SEARCH_QUERY = `
@@ -39,6 +38,40 @@ const SEARCH_QUERY = `
           }
           commits(last: 1) {
             nodes { commit { statusCheckRollup { state } } }
+          }
+          stackEntry { position }
+          stack {
+            number
+            size
+            entries(first: 30) {
+              nodes { position pullRequest { number title url state } }
+            }
+          }
+          timelineItems(
+            last: 20
+            itemTypes: [
+              ISSUE_COMMENT
+              PULL_REQUEST_REVIEW
+              PULL_REQUEST_COMMIT
+              HEAD_REF_FORCE_PUSHED_EVENT
+              READY_FOR_REVIEW_EVENT
+              REVIEW_REQUESTED_EVENT
+            ]
+          ) {
+            nodes {
+              __typename
+              ... on IssueComment { createdAt author { login } }
+              ... on PullRequestReview { createdAt author { login } }
+              ... on PullRequestCommit {
+                commit { committedDate author { user { login } } }
+              }
+              ... on HeadRefForcePushedEvent { createdAt actor { login } }
+              ... on ReadyForReviewEvent { createdAt actor { login } }
+              ... on ReviewRequestedEvent {
+                createdAt
+                requestedReviewer { ... on User { login } }
+              }
+            }
           }
         }
       }
@@ -83,6 +116,34 @@ async function fetchViewer() {
   return data.viewer;
 }
 
+// Returns [who, when] for a timeline item, or null if it isn't news to the viewer.
+function timelineActivity(item, viewerLogin) {
+  switch (item.__typename) {
+    case 'PullRequestCommit':
+      return [item.commit.author?.user?.login, item.commit.committedDate];
+    case 'ReviewRequestedEvent':
+      return item.requestedReviewer?.login === viewerLogin ? [null, item.createdAt] : null;
+    case 'IssueComment':
+    case 'PullRequestReview':
+      return [item.author?.login, item.createdAt];
+    default:
+      return [item.actor?.login, item.createdAt];
+  }
+}
+
+// The latest activity by someone other than the viewer: comments, reviews,
+// pushes, and review requests sent to the viewer. Falls back to creation time.
+function lastActivityFromOthers(node, viewerLogin) {
+  let latest = node.author?.login === viewerLogin ? '' : node.createdAt;
+  for (const item of node.timelineItems.nodes) {
+    const activity = timelineActivity(item, viewerLogin);
+    if (!activity) continue;
+    const [who, when] = activity;
+    if (who !== viewerLogin && when > latest) latest = when;
+  }
+  return latest || null;
+}
+
 function toPr(node, viewerLogin) {
   const requested = node.reviewRequests.nodes.some(
     (r) => r.requestedReviewer?.login === viewerLogin,
@@ -103,7 +164,39 @@ function toPr(node, viewerLogin) {
     reviewDecision: node.reviewDecision,
     checks: node.commits.nodes[0]?.commit.statusCheckRollup?.state ?? null,
     reviewRequestedFromMe: requested,
+    lastActivityAt: lastActivityFromOthers(node, viewerLogin),
+    stack: node.stack && {
+      key: `${node.repository.nameWithOwner}#${node.stack.number}`,
+      number: node.stack.number,
+      size: node.stack.size,
+      position: node.stackEntry.position,
+      entries: node.stack.entries.nodes
+        .map((e) => ({ position: e.position, ...e.pullRequest }))
+        .sort((a, b) => a.position - b.position),
+    },
   };
+}
+
+// Most recently updated first, but PRs from the same stack stay together,
+// bottom of the stack first, at the slot of the stack's most recent PR.
+function sortPrs(prs) {
+  const byRecency = [...prs].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  const sorted = [];
+  const emittedStacks = new Set();
+  for (const pr of byRecency) {
+    if (!pr.stack) {
+      sorted.push(pr);
+      continue;
+    }
+    if (emittedStacks.has(pr.stack.key)) continue;
+    emittedStacks.add(pr.stack.key);
+    sorted.push(
+      ...byRecency
+        .filter((p) => p.stack?.key === pr.stack.key)
+        .sort((a, b) => a.stack.position - b.stack.position),
+    );
+  }
+  return sorted;
 }
 
 async function fetchSection(queries, viewerLogin) {
@@ -114,11 +207,17 @@ async function fetchSection(queries, viewerLogin) {
       if (!byId.has(node.id)) byId.set(node.id, toPr(node, viewerLogin));
     }
   }
-  return [...byId.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  return sortPrs([...byId.values()]);
 }
 
+let viewerPromise;
+
 async function fetchDashboard() {
-  const viewer = await fetchViewer();
+  viewerPromise ??= fetchViewer().catch((error) => {
+    viewerPromise = undefined;
+    throw error;
+  });
+  const viewer = await viewerPromise;
   const entries = await Promise.all(
     Object.entries(SECTIONS).map(async ([key, queries]) => [
       key,

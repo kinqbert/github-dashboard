@@ -19,17 +19,21 @@
       </div>
     </header>
 
+    <div id="summary" class="summary"></div>
+
     <main>
       <section data-section="mine">
-        <h2>My PRs <span class="count"></span></h2>
+        <div class="section-header">
+          <h2>My PRs <span class="count"></span> <span class="unread-count"></span></h2>
+          <button class="mark-all" type="button">Mark all as read</button>
+        </div>
         <ul class="list"></ul>
       </section>
       <section data-section="reviewing">
-        <h2>Reviewing <span class="count"></span></h2>
-        <ul class="list"></ul>
-      </section>
-      <section data-section="mentioned">
-        <h2>Mentioned <span class="count"></span></h2>
+        <div class="section-header">
+          <h2>Reviewing <span class="count"></span> <span class="unread-count"></span></h2>
+          <button class="mark-all" type="button">Mark all as read</button>
+        </div>
         <ul class="list"></ul>
       </section>
     </main>
