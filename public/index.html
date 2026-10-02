@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>GitHub Dashboard</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header>
+      <div class="who">
+        <img id="avatar" alt="" />
+        <h1>Pull requests</h1>
+      </div>
+      <div class="controls">
+        <input id="filter" type="search" placeholder="Filter by title, repo, or author" />
+        <span id="status"></span>
+        <button id="refresh" type="button">Refresh</button>
+      </div>
+    </header>
+
+    <main>
+      <section data-section="mine">
+        <h2>My PRs <span class="count"></span></h2>
+        <ul class="list"></ul>
+      </section>
+      <section data-section="reviewing">
+        <h2>Reviewing <span class="count"></span></h2>
+        <ul class="list"></ul>
+      </section>
+      <section data-section="mentioned">
+        <h2>Mentioned <span class="count"></span></h2>
+        <ul class="list"></ul>
+      </section>
+    </main>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
