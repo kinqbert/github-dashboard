@@ -1,21 +1,23 @@
-import { execFileSync } from 'node:child_process';
-import { readFile } from 'node:fs/promises';
-import { createServer } from 'node:http';
-import { extname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { execFileSync } from "node:child_process";
+import { readFile } from "node:fs/promises";
+import { createServer } from "node:http";
+import { extname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const PORT = Number(process.env.PORT ?? 4321);
-const GITHUB_REPO = process.env.GITHUB_REPO?.trim() ?? '';
+const GITHUB_REPO = process.env.GITHUB_REPO?.trim() ?? "";
 if (GITHUB_REPO && !/^[a-zA-Z0-9-]+\/[a-zA-Z0-9_.-]+$/.test(GITHUB_REPO)) {
-  throw new Error('GITHUB_REPO must use the owner/repo format (for example, octocat/Hello-World).');
+  throw new Error(
+    "GITHUB_REPO must use the owner/repo format (for example, octocat/Hello-World).",
+  );
 }
-const PUBLIC_DIR = join(fileURLToPath(new URL('.', import.meta.url)), 'public');
+const PUBLIC_DIR = join(fileURLToPath(new URL(".", import.meta.url)), "public");
 
 const SECTIONS = {
-  mine: ['is:pr is:open archived:false author:@me'],
+  mine: ["is:pr is:open archived:false author:@me"],
   reviewing: [
-    'is:pr is:open archived:false user-review-requested:@me',
-    'is:pr is:open archived:false reviewed-by:@me -author:@me',
+    "is:pr is:open archived:false user-review-requested:@me",
+    "is:pr is:open archived:false reviewed-by:@me -author:@me",
   ],
 };
 
@@ -86,10 +88,10 @@ const SEARCH_QUERY = `
 function resolveToken() {
   if (process.env.GITHUB_TOKEN) return process.env.GITHUB_TOKEN;
   try {
-    return execFileSync('gh', ['auth', 'token'], { encoding: 'utf8' }).trim();
+    return execFileSync("gh", ["auth", "token"], { encoding: "utf8" }).trim();
   } catch (error) {
     throw new Error(
-      'No GitHub token. Set GITHUB_TOKEN or log in with `gh auth login`.',
+      "No GitHub token. Set GITHUB_TOKEN or log in with `gh auth login`.",
       { cause: error },
     );
   }
@@ -98,37 +100,40 @@ function resolveToken() {
 const token = resolveToken();
 
 async function graphql(query, variables) {
-  const res = await fetch('https://api.github.com/graphql', {
-    method: 'POST',
+  const res = await fetch("https://api.github.com/graphql", {
+    method: "POST",
     headers: {
       Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-      'User-Agent': 'github-dashboard',
+      "Content-Type": "application/json",
+      "User-Agent": "github-dashboard",
     },
     body: JSON.stringify({ query, variables }),
   });
   const body = await res.json();
   if (!res.ok || body.errors) {
-    const message = body.errors?.map((e) => e.message).join('; ') ?? res.statusText;
+    const message =
+      body.errors?.map((e) => e.message).join("; ") ?? res.statusText;
     throw new Error(`GitHub API ${res.status}: ${message}`);
   }
   return body.data;
 }
 
 async function fetchViewer() {
-  const data = await graphql('query { viewer { login avatarUrl } }');
+  const data = await graphql("query { viewer { login avatarUrl } }");
   return data.viewer;
 }
 
 // Returns [who, when] for a timeline item, or null if it isn't news to the viewer.
 function timelineActivity(item, viewerLogin) {
   switch (item.__typename) {
-    case 'PullRequestCommit':
+    case "PullRequestCommit":
       return [item.commit.author?.user?.login, item.commit.committedDate];
-    case 'ReviewRequestedEvent':
-      return item.requestedReviewer?.login === viewerLogin ? [null, item.createdAt] : null;
-    case 'IssueComment':
-    case 'PullRequestReview':
+    case "ReviewRequestedEvent":
+      return item.requestedReviewer?.login === viewerLogin
+        ? [null, item.createdAt]
+        : null;
+    case "IssueComment":
+    case "PullRequestReview":
       return [item.author?.login, item.createdAt];
     default:
       return [item.actor?.login, item.createdAt];
@@ -138,7 +143,7 @@ function timelineActivity(item, viewerLogin) {
 // The latest activity by someone other than the viewer: comments, reviews,
 // pushes, and review requests sent to the viewer. Falls back to creation time.
 function lastActivityFromOthers(node, viewerLogin) {
-  let latest = node.author?.login === viewerLogin ? '' : node.createdAt;
+  let latest = node.author?.login === viewerLogin ? "" : node.createdAt;
   for (const item of node.timelineItems.nodes) {
     const activity = timelineActivity(item, viewerLogin);
     if (!activity) continue;
@@ -184,7 +189,9 @@ function toPr(node, viewerLogin) {
 // Most recently updated first, but PRs from the same stack stay together,
 // bottom of the stack first, at the slot of the stack's most recent PR.
 function sortPrs(prs) {
-  const byRecency = [...prs].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  const byRecency = [...prs].sort((a, b) =>
+    b.updatedAt.localeCompare(a.updatedAt),
+  );
   const sorted = [];
   const emittedStacks = new Set();
   for (const pr of byRecency) {
@@ -204,9 +211,13 @@ function sortPrs(prs) {
 }
 
 async function fetchSection(queries, viewerLogin) {
-  const results = await Promise.all(queries.map((q) => graphql(SEARCH_QUERY, {
-    q: GITHUB_REPO ? `${q} repo:${GITHUB_REPO}` : q,
-  })));
+  const results = await Promise.all(
+    queries.map((q) =>
+      graphql(SEARCH_QUERY, {
+        q: GITHUB_REPO ? `${q} repo:${GITHUB_REPO}` : q,
+      }),
+    ),
+  );
   const byId = new Map();
   for (const result of results) {
     for (const node of result.search.nodes) {
@@ -230,42 +241,50 @@ async function fetchDashboard() {
       await fetchSection(queries, viewer.login),
     ]),
   );
-  return { viewer, fetchedAt: new Date().toISOString(), ...Object.fromEntries(entries) };
+  return {
+    viewer,
+    fetchedAt: new Date().toISOString(),
+    ...Object.fromEntries(entries),
+  };
 }
 
-const STATIC_FILES = new Set(['index.html', 'app.js', 'styles.css']);
+const STATIC_FILES = new Set(["index.html", "app.js", "styles.css"]);
 
 const CONTENT_TYPES = {
-  '.html': 'text/html; charset=utf-8',
-  '.css': 'text/css; charset=utf-8',
-  '.js': 'text/javascript; charset=utf-8',
+  ".html": "text/html; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".js": "text/javascript; charset=utf-8",
 };
 
 async function serveStatic(pathname, res) {
-  const file = pathname === '/' ? 'index.html' : pathname.slice(1);
+  const file = pathname === "/" ? "index.html" : pathname.slice(1);
   if (!STATIC_FILES.has(file)) {
-    res.writeHead(404).end('Not found');
+    res.writeHead(404).end("Not found");
     return;
   }
   const contents = await readFile(join(PUBLIC_DIR, file));
-  res.writeHead(200, { 'Content-Type': CONTENT_TYPES[extname(file)] }).end(contents);
+  res
+    .writeHead(200, { "Content-Type": CONTENT_TYPES[extname(file)] })
+    .end(contents);
 }
 
 createServer(async (req, res) => {
   const { pathname } = new URL(req.url, `http://${req.headers.host}`);
   try {
-    if (pathname === '/api/prs') {
+    if (pathname === "/api/prs") {
       const data = await fetchDashboard();
-      res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify(data));
+      res
+        .writeHead(200, { "Content-Type": "application/json" })
+        .end(JSON.stringify(data));
       return;
     }
     await serveStatic(pathname, res);
   } catch (error) {
     console.error(error);
     res
-      .writeHead(500, { 'Content-Type': 'application/json' })
+      .writeHead(500, { "Content-Type": "application/json" })
       .end(JSON.stringify({ error: error.message }));
   }
-}).listen(PORT, '127.0.0.1', () => {
+}).listen(PORT, "127.0.0.1", () => {
   console.log(`GitHub dashboard running at http://localhost:${PORT}`);
 });
