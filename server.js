@@ -5,6 +5,10 @@ import { extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const PORT = Number(process.env.PORT ?? 4321);
+const GITHUB_REPO = process.env.GITHUB_REPO?.trim() ?? '';
+if (GITHUB_REPO && !/^[a-zA-Z0-9-]+\/[a-zA-Z0-9_.-]+$/.test(GITHUB_REPO)) {
+  throw new Error('GITHUB_REPO must use the owner/repo format (for example, octocat/Hello-World).');
+}
 const PUBLIC_DIR = join(fileURLToPath(new URL('.', import.meta.url)), 'public');
 
 const SECTIONS = {
@@ -200,7 +204,9 @@ function sortPrs(prs) {
 }
 
 async function fetchSection(queries, viewerLogin) {
-  const results = await Promise.all(queries.map((q) => graphql(SEARCH_QUERY, { q })));
+  const results = await Promise.all(queries.map((q) => graphql(SEARCH_QUERY, {
+    q: GITHUB_REPO ? `${q} repo:${GITHUB_REPO}` : q,
+  })));
   const byId = new Map();
   for (const result of results) {
     for (const node of result.search.nodes) {

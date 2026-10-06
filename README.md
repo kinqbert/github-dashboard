@@ -43,6 +43,16 @@ The server only listens on `127.0.0.1`, so the token is never exposed outside yo
 
 ## Changing what's shown
 
+Set `GITHUB_REPO` to a repository's full `owner/repo` name to show only its PRs in both
+columns and the summary:
+
+```bash
+GITHUB_REPO=octocat/Hello-World npm start
+```
+
+Leave it unset or empty to show PRs from all repositories. Restart the server after
+changing the variable.
+
 The GitHub search queries for each column live in `SECTIONS` at the top of `server.js`. For
 example, to include review requests sent to teams you belong to, change
 `user-review-requested:@me` to `review-requested:@me`.
