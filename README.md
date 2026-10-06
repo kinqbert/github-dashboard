@@ -22,9 +22,10 @@ The page refreshes every minute while the tab is visible.
 
 ## Run it
 
-Requires Node 18+. There are no dependencies to install.
+Requires Node 18+.
 
 ```bash
+npm install
 npm start        # http://localhost:4321
 npm run dev      # same, restarts on server.js changes
 ```
@@ -52,6 +53,15 @@ GITHUB_REPO=octocat/Hello-World npm start
 
 Leave it unset or empty to show PRs from all repositories. Restart the server after
 changing the variable.
+
+You can also put the setting in a `.env` file in the project directory:
+
+```dotenv
+GITHUB_REPO=octocat/Hello-World
+```
+
+The server loads `.env` automatically on startup. Variables already set in your shell
+take precedence over values in `.env`. The `.env` file is ignored by Git.
 
 The GitHub search queries for each column live in `SECTIONS` at the top of `server.js`. For
 example, to include review requests sent to teams you belong to, change

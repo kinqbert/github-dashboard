@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { execFileSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { createServer } from "node:http";
