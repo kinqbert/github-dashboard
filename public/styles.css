@@ -13,7 +13,7 @@
   --stack: #8250df;
   --shadow-sm: 0 1px 2px rgb(31 35 40 / 0.05);
   --shadow: 0 2px 4px rgb(31 35 40 / 0.06), 0 8px 24px rgb(31 35 40 / 0.06);
-  --radius: 12px;
+  --radius: 6px;
   --bone: #e4e7eb;
   color-scheme: light dark;
 }
@@ -102,7 +102,7 @@ h1 {
 }
 
 #filter {
-  width: 300px;
+  width: 280px;
   max-width: 100%;
   padding: 8px 12px 8px 34px;
   border: 1px solid var(--border);
@@ -161,18 +161,30 @@ button:disabled {
   cursor: default;
 }
 
-#refresh {
+.icon-button {
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
   border-color: transparent;
-  background: var(--link);
-  color: #fff;
+  background: transparent;
+  box-shadow: none;
+  color: var(--muted);
 }
 
-#refresh:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--link) 88%, #000);
+.icon-button:hover:not(:disabled) {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--muted) 14%, transparent);
+  color: var(--text);
 }
 
 #refresh:disabled {
+  opacity: 1;
   cursor: progress;
+}
+
+#refresh.spinning svg {
+  animation: spin 0.8s linear infinite;
 }
 
 /* Summary */
@@ -302,12 +314,15 @@ main {
 .toolbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  gap: 8px 12px;
   flex-wrap: wrap;
   max-width: 1400px;
   margin: 0 auto;
   padding: 20px 24px 0;
+}
+
+#compact {
+  margin-left: auto;
 }
 
 .chips {
@@ -570,6 +585,12 @@ h2 {
   flex-shrink: 1;
 }
 
+/* Keeps a card's stack popover above the cards below it. */
+.pr:hover,
+.pr:focus-within {
+  z-index: 1;
+}
+
 .title {
   display: block;
   margin-top: 2px;
@@ -746,12 +767,28 @@ button .spinner {
 /* A stack's cards join into one block: no gap, a shared border between cards, square
    corners where they meet, and one colored rail down the left edge. */
 .pr.in-stack {
-  border-left-color: var(--stack);
-  box-shadow: inset 3px 0 0 var(--stack);
+  box-shadow: none;
+}
+
+/* The rail: a strip over the card's left edge. It's as wide as the corner radius so
+   its rounded corners match the card's, but only the first 4px are colored, which
+   keeps the rail's inner edge straight. */
+.pr.in-stack::after {
+  content: '';
+  position: absolute;
+  top: -1px;
+  bottom: -1px;
+  left: -1px;
+  width: var(--radius);
+  border-radius: inherit;
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+  background: linear-gradient(to right, var(--stack) 4px, transparent 4px);
+  pointer-events: none;
 }
 
 .pr.in-stack:hover {
-  box-shadow: inset 3px 0 0 var(--stack), var(--shadow);
+  box-shadow: var(--shadow);
   /* Lifting one card would pull it out of the block. */
   transform: none;
   z-index: 1;
@@ -785,49 +822,99 @@ button .spinner {
   margin-top: 0;
 }
 
+/* The "Stack 2/3" chip, first in the badges row; hovering or focusing it opens the list of the stack's PRs. */
 .stack {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 8px;
-  font-size: 12px;
+  position: relative;
+  display: inline-flex;
 }
 
-.badge.stack-badge {
+.badge.stack-badge,
+.badge.stack-badge:hover:not(:disabled) {
+  padding: 1px 7px;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
   color: var(--stack);
+  background: color-mix(in srgb, var(--stack) 11%, transparent);
+  border-color: color-mix(in srgb, var(--stack) 22%, transparent);
+  box-shadow: none;
+  cursor: default;
 }
 
-.chain {
+.stack-pop {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 5;
+  display: none;
+  flex-direction: column;
+  width: max-content;
+  min-width: min(240px, 80vw);
+  max-width: min(360px, 80vw);
+  margin-top: 4px;
+  padding: 6px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+/* Bridges the gap above the popover so it stays open while the pointer moves onto it. */
+.stack-pop::before {
+  content: '';
+  position: absolute;
+  inset: -6px 0 auto;
+  height: 6px;
+}
+
+.stack:hover .stack-pop,
+.stack:focus-within .stack-pop {
   display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-
-.chain .sep {
-  color: var(--muted);
 }
 
 .stack-pr {
-  color: var(--muted);
+  display: flex;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 4px;
+  color: var(--text);
+  font-size: 12px;
   text-decoration: none;
+  white-space: nowrap;
+}
+
+.stack-pr span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .stack-pr:hover {
+  background: var(--panel-2);
   color: var(--link);
-  text-decoration: underline;
+}
+
+.stack-num {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
 }
 
 .stack-pr.current {
+  background: color-mix(in srgb, var(--stack) 11%, transparent);
+  font-weight: 600;
+}
+
+.stack-pr.current .stack-num {
   color: var(--stack);
-  font-weight: 700;
 }
 
 .stack-pr.merged,
 .stack-pr.closed {
+  opacity: 0.55;
+}
+
+.stack-pr.merged span:last-child,
+.stack-pr.closed span:last-child {
   text-decoration: line-through;
-  opacity: 0.6;
 }
 
 a.badge {

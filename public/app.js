@@ -19,6 +19,9 @@ const STACK_PALETTE = [
 const STACK_ICON =
   '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M8 1.75 14.25 5 8 8.25 1.75 5Z"/><path d="M1.75 8 8 11.25 14.25 8"/><path d="M1.75 11 8 14.25 14.25 11"/></svg>';
 
+const REFRESH_ICON =
+  '<svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M13.25 8a5.25 5.25 0 1 1-1.54-3.71"/><path d="M13.25 2.5v3.25H10"/></svg>';
+
 const CHECK_ICON =
   '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M3.5 8.5 6.5 11.5 12.5 4.5"/></svg>';
 
@@ -210,26 +213,30 @@ function whatsNew(pr) {
   return parts.join(' · ');
 }
 
+// A "Stack 2/3" chip; hovering or focusing it lists every PR in the stack.
 function renderStack(pr) {
   const { stack } = pr;
-  const chain = [];
-  for (const entry of stack.entries) {
-    if (chain.length) chain.push(el('span', { className: 'sep', textContent: '›' }));
-    const isCurrent = entry.number === pr.number;
-    chain.push(
-      el('a', {
-        className: `stack-pr ${entry.state.toLowerCase()}${isCurrent ? ' current' : ''}`,
+  const entries = stack.entries.map((entry) =>
+    el(
+      'a',
+      {
+        className: `stack-pr ${entry.state.toLowerCase()}${entry.number === pr.number ? ' current' : ''}`,
         href: entry.url,
         target: '_blank',
         rel: 'noopener',
-        title: `${entry.title} (${entry.state.toLowerCase()})`,
-        textContent: `#${entry.number}`,
-      }),
-    );
-  }
-  const chip = el('span', { className: 'badge stack-badge', innerHTML: STACK_ICON });
+        title: entry.state === 'OPEN' ? '' : entry.state.toLowerCase(),
+      },
+      [el('span', { className: 'stack-num', textContent: `#${entry.number}` }), el('span', { textContent: entry.title })],
+    ),
+  );
+  const chip = el('button', {
+    type: 'button',
+    className: 'badge stack-badge',
+    ariaLabel: `Stack, ${stack.position} of ${stack.size}`,
+    innerHTML: STACK_ICON,
+  });
   chip.append(`Stack ${stack.position}/${stack.size}`);
-  return el('div', { className: 'stack' }, [chip, el('span', { className: 'chain' }, chain)]);
+  return el('span', { className: 'stack' }, [chip, el('span', { className: 'stack-pop' }, entries)]);
 }
 
 function renderBadges(pr, section) {
@@ -277,7 +284,7 @@ function renderBadges(pr, section) {
 }
 
 function renderPr(pr, section) {
-  const badges = renderBadges(pr, section);
+  const badges = [...(pr.stack ? [renderStack(pr)] : []), ...renderBadges(pr, section)];
 
   const meta = el('div', { className: 'meta' }, [
     el('img', { className: 'author-avatar', src: pr.author?.avatarUrl ?? '', alt: '' }),
@@ -316,7 +323,6 @@ function renderPr(pr, section) {
         : '',
     ]),
     el('a', { className: 'title', href: pr.url, target: '_blank', rel: 'noopener', textContent: pr.title }),
-    pr.stack ? renderStack(pr) : '',
     badges.length ? el('div', { className: 'badges' }, badges) : '',
     meta,
   ]);
@@ -545,7 +551,7 @@ async function load() {
   if (loading) return;
   loading = true;
   refreshBtn.disabled = true;
-  refreshBtn.replaceChildren(spinner(), 'Refreshing');
+  refreshBtn.classList.add('spinning');
   statusEl.classList.remove('error');
   if (loadFailed) {
     loadFailed = false;
@@ -571,7 +577,7 @@ async function load() {
   } finally {
     loading = false;
     refreshBtn.disabled = false;
-    refreshBtn.replaceChildren('Refresh');
+    refreshBtn.classList.remove('spinning');
   }
 }
 
@@ -586,6 +592,7 @@ for (const section of document.querySelectorAll('section[data-section]')) {
 }
 refreshBtn.addEventListener('click', load);
 filterEl.addEventListener('input', render);
+refreshBtn.innerHTML = REFRESH_ICON;
 compactBtn.addEventListener('click', () => {
   compact = !compact;
   writeJson(COMPACT_KEY, compact);

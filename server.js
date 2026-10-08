@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { extname, join } from "node:path";
@@ -322,5 +322,21 @@ createServer(async (req, res) => {
       .end(JSON.stringify({ error: error.message }));
   }
 }).listen(PORT, "127.0.0.1", () => {
-  console.log(`GitHub dashboard running at http://localhost:${PORT}`);
+  const url = `http://localhost:${PORT}`;
+  console.log(`GitHub dashboard running at ${url}`);
+  if (!process.argv.includes("--no-open")) openBrowser(url);
 });
+
+// Opens the URL in the default browser. Failing to open it isn't an error: the
+// address is printed above.
+function openBrowser(url) {
+  const [command, args] =
+    process.platform === "darwin"
+      ? ["open", [url]]
+      : process.platform === "win32"
+        ? ["cmd", ["/c", "start", "", url]]
+        : ["xdg-open", [url]];
+  spawn(command, args, { stdio: "ignore", detached: true })
+    .on("error", () => {})
+    .unref();
+}

@@ -38,8 +38,8 @@ Requires Node 18+.
 
 ```bash
 npm install
-npm start        # http://localhost:4321
-npm run dev      # same, restarts on server.js changes
+npm start        # http://localhost:4321, opens in your browser
+npm run dev      # same, restarts on server.js changes (doesn't open the browser)
 ```
 
 ## Auth
