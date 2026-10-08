@@ -40,6 +40,7 @@ const SEARCH_QUERY = `
           author { login avatarUrl }
           repository { nameWithOwner }
           comments { totalCount }
+          reviewThreads(first: 100) { totalCount nodes { isResolved } }
           reviewRequests(first: 20) {
             nodes { requestedReviewer { ... on User { login } } }
           }
@@ -204,6 +205,10 @@ function toPr(node, viewerLogin) {
     additions: node.additions,
     deletions: node.deletions,
     comments: node.comments.totalCount,
+    threads: {
+      total: node.reviewThreads.totalCount,
+      resolved: node.reviewThreads.nodes.filter((t) => t.isResolved).length,
+    },
     reviewDecision: node.reviewDecision,
     checks: node.commits.nodes[0]?.commit.statusCheckRollup?.state ?? null,
     reviewRequestedFromMe: requested,

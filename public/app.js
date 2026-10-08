@@ -239,12 +239,20 @@ function renderStack(pr) {
   return el('span', { className: 'stack' }, [chip, el('span', { className: 'stack-pop' }, entries)]);
 }
 
+function threadsBadge({ total, resolved }) {
+  return badge(`${resolved}/${plural(total, 'thread')} resolved`, resolved === total ? 'good' : 'neutral', {
+    title: resolved === total ? 'All review threads resolved' : `${total - resolved} unresolved`,
+  });
+}
+
 function renderBadges(pr, section) {
   const badges = [];
   if (pr.isDraft) badges.push(badge('Draft', 'muted'));
 
   if (section === 'mine' && readyToMerge(pr)) {
     badges.push(badge('Ready to merge', 'good'));
+    // Approval doesn't mean every thread was resolved, so call out the ones that weren't.
+    if (pr.threads && pr.threads.resolved < pr.threads.total) badges.push(threadsBadge(pr.threads));
     return badges;
   }
 
@@ -266,6 +274,8 @@ function renderBadges(pr, section) {
       }),
     );
   }
+
+  if (pr.threads?.total) badges.push(threadsBadge(pr.threads));
 
   if (CHECK_LABELS[pr.checks]) {
     const [text, tone] = CHECK_LABELS[pr.checks];
