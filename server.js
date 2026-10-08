@@ -32,6 +32,7 @@ const SEARCH_QUERY = `
           title
           url
           isDraft
+          headRefName
           createdAt
           updatedAt
           additions
@@ -200,6 +201,7 @@ function toPr(node, viewerLogin) {
     repo: node.repository.nameWithOwner,
     author: node.author,
     isDraft: node.isDraft,
+    branch: node.headRefName,
     createdAt: node.createdAt,
     updatedAt: node.updatedAt,
     additions: node.additions,
@@ -289,6 +291,24 @@ async function fetchDashboard() {
   };
 }
 
+const BUGBOT_COMMENT = "bugbot run";
+
+// Comments on the PR as the token's user, which asks Bugbot to review it.
+async function requestBugbot(prId) {
+  await graphql(
+    `mutation ($id: ID!, $body: String!) {
+      addComment(input: { subjectId: $id, body: $body }) { clientMutationId }
+    }`,
+    { id: prId, body: BUGBOT_COMMENT },
+  );
+}
+
+async function readJsonBody(req) {
+  let raw = "";
+  for await (const chunk of req) raw += chunk;
+  return JSON.parse(raw || "{}");
+}
+
 const STATIC_FILES = new Set(["index.html", "app.js", "styles.css"]);
 
 const CONTENT_TYPES = {
@@ -317,6 +337,25 @@ createServer(async (req, res) => {
       res
         .writeHead(200, { "Content-Type": "application/json" })
         .end(JSON.stringify(data));
+      return;
+    }
+    // Requiring JSON forces a CORS preflight, so other sites can't post comments.
+    if (
+      pathname === "/api/bugbot" &&
+      req.method === "POST" &&
+      req.headers["content-type"] === "application/json"
+    ) {
+      const { id } = await readJsonBody(req);
+      if (typeof id !== "string" || !id) {
+        res
+          .writeHead(400, { "Content-Type": "application/json" })
+          .end(JSON.stringify({ error: "Missing PR id" }));
+        return;
+      }
+      await requestBugbot(id);
+      res
+        .writeHead(200, { "Content-Type": "application/json" })
+        .end(JSON.stringify({ ok: true }));
       return;
     }
     await serveStatic(pathname, res);

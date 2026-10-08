@@ -25,6 +25,12 @@ const REFRESH_ICON =
 const CHECK_ICON =
   '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M3.5 8.5 6.5 11.5 12.5 4.5"/></svg>';
 
+const BUG_ICON =
+  '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M5.5 4.5a2.5 2.5 0 0 1 5 0"/><rect x="4.5" y="4.5" width="7" height="9" rx="3.5"/><path d="M8 7v6.5M1.75 8.5h2.75M11.5 8.5h2.75M2.5 4.75 4.75 6M13.5 4.75 11.25 6M2.5 13.25l2.25-1.25M13.5 13.25l-2.25-1.25"/></svg>';
+
+const BRANCH_ICON =
+  '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><circle cx="4.5" cy="3.5" r="1.75"/><circle cx="4.5" cy="12.5" r="1.75"/><circle cx="11.5" cy="5" r="1.75"/><path d="M4.5 5.25v5.5M11.5 6.75c0 3-7 1.5-7 4"/></svg>';
+
 const statusEl = document.getElementById('status');
 const refreshBtn = document.getElementById('refresh');
 const filterEl = document.getElementById('filter');
@@ -322,15 +328,32 @@ function renderPr(pr, section) {
   }
   const news = unread ? whatsNew(pr) : '';
 
+  const bugbot = el('button', {
+    type: 'button',
+    className: 'pr-action bugbot',
+    title: 'Comment "bugbot run"',
+    ariaLabel: 'Comment "bugbot run"',
+    innerHTML: BUG_ICON,
+  });
+  bugbot.addEventListener('click', () => requestBugbot(pr, bugbot));
+
+  const copyBranch = el('button', {
+    type: 'button',
+    className: 'pr-action copy-branch',
+    title: `Copy branch name: ${pr.branch}`,
+    ariaLabel: 'Copy branch name',
+    innerHTML: BRANCH_ICON,
+  });
+  copyBranch.addEventListener('click', () => copyBranchName(pr, copyBranch));
+
   const item = el('li', { className: 'pr' }, [
     el('div', { className: 'pr-top' }, [
       el('span', { className: 'repo', textContent: `${pr.repo} #${pr.number}` }),
-      unread
-        ? el('span', { className: 'pr-actions' }, [
-            news ? el('span', { className: 'whats-new', textContent: news, title: news }) : '',
-            tick,
-          ])
-        : '',
+      el('span', { className: 'pr-actions' }, [
+        news ? el('span', { className: 'whats-new', textContent: news, title: news }) : '',
+        el('span', { className: 'hover-actions' }, [copyBranch, bugbot]),
+        tick,
+      ]),
     ]),
     el('a', { className: 'title', href: pr.url, target: '_blank', rel: 'noopener', textContent: pr.title }),
     badges.length ? el('div', { className: 'badges' }, badges) : '',
@@ -342,6 +365,42 @@ function renderPr(pr, section) {
   }
   if (unread) item.classList.add('unread');
   return item;
+}
+
+async function requestBugbot(pr, button) {
+  button.disabled = true;
+  button.classList.remove('done', 'failed');
+  try {
+    const res = await fetch('/api/bugbot', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: pr.id }),
+    });
+    const body = await res.json();
+    if (!res.ok) throw new Error(body.error ?? res.statusText);
+    button.classList.add('done');
+    button.innerHTML = CHECK_ICON;
+    button.title = 'Commented "bugbot run"';
+  } catch (error) {
+    button.classList.add('failed');
+    button.title = `Failed to comment: ${error.message}`;
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function copyBranchName(pr, button) {
+  try {
+    await navigator.clipboard.writeText(pr.branch);
+    button.classList.add('done');
+    button.innerHTML = CHECK_ICON;
+  } catch {
+    button.classList.add('failed');
+  }
+  setTimeout(() => {
+    button.classList.remove('done', 'failed');
+    button.innerHTML = BRANCH_ICON;
+  }, 1500);
 }
 
 function stat(label, value, detail, tone = '') {
