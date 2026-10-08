@@ -43,6 +43,14 @@ const SEARCH_QUERY = `
           reviewRequests(first: 20) {
             nodes { requestedReviewer { ... on User { login } } }
           }
+          requestEvents: timelineItems(last: 10, itemTypes: [REVIEW_REQUESTED_EVENT]) {
+            nodes {
+              ... on ReviewRequestedEvent {
+                createdAt
+                requestedReviewer { ... on User { login } }
+              }
+            }
+          }
           commits(last: 1) {
             nodes { commit { statusCheckRollup { state } } }
           }
@@ -124,6 +132,15 @@ async function fetchViewer() {
   return data.viewer;
 }
 
+const ACTIVITY_KINDS = {
+  IssueComment: "comment",
+  PullRequestReview: "review",
+  PullRequestCommit: "commit",
+  HeadRefForcePushedEvent: "force-push",
+  ReadyForReviewEvent: "ready",
+  ReviewRequestedEvent: "review-requested",
+};
+
 // Returns [who, when] for a timeline item, or null if it isn't news to the viewer.
 function timelineActivity(item, viewerLogin) {
   switch (item.__typename) {
@@ -141,23 +158,39 @@ function timelineActivity(item, viewerLogin) {
   }
 }
 
-// The latest activity by someone other than the viewer: comments, reviews,
-// pushes, and review requests sent to the viewer. Falls back to creation time.
-function lastActivityFromOthers(node, viewerLogin) {
-  let latest = node.author?.login === viewerLogin ? "" : node.createdAt;
+// Activity by someone other than the viewer, oldest first: comments, reviews,
+// pushes, and review requests sent to the viewer. Someone else's PR also counts
+// its creation, so a new PR shows up as unread.
+function activityFromOthers(node, viewerLogin) {
+  const activity =
+    node.author?.login === viewerLogin
+      ? []
+      : [{ kind: "opened", at: node.createdAt }];
   for (const item of node.timelineItems.nodes) {
-    const activity = timelineActivity(item, viewerLogin);
-    if (!activity) continue;
-    const [who, when] = activity;
-    if (who !== viewerLogin && when > latest) latest = when;
+    const found = timelineActivity(item, viewerLogin);
+    if (!found) continue;
+    const [who, at] = found;
+    if (who !== viewerLogin) {
+      activity.push({ kind: ACTIVITY_KINDS[item.__typename], at });
+    }
   }
-  return latest || null;
+  return activity.sort((a, b) => a.at.localeCompare(b.at));
+}
+
+// When the viewer's review was most recently requested, if it was.
+function reviewRequestedAt(node, viewerLogin) {
+  const times = node.requestEvents.nodes
+    .filter((e) => e.requestedReviewer?.login === viewerLogin)
+    .map((e) => e.createdAt)
+    .sort();
+  return times.at(-1) ?? null;
 }
 
 function toPr(node, viewerLogin) {
   const requested = node.reviewRequests.nodes.some(
     (r) => r.requestedReviewer?.login === viewerLogin,
   );
+  const activity = activityFromOthers(node, viewerLogin);
   return {
     id: node.id,
     number: node.number,
@@ -174,7 +207,9 @@ function toPr(node, viewerLogin) {
     reviewDecision: node.reviewDecision,
     checks: node.commits.nodes[0]?.commit.statusCheckRollup?.state ?? null,
     reviewRequestedFromMe: requested,
-    lastActivityAt: lastActivityFromOthers(node, viewerLogin),
+    reviewRequestedAt: requested ? reviewRequestedAt(node, viewerLogin) : null,
+    activity,
+    lastActivityAt: activity.at(-1)?.at ?? null,
     stack: node.stack && {
       key: `${node.repository.nameWithOwner}#${node.stack.number}`,
       number: node.stack.number,
