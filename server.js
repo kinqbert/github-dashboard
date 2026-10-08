@@ -38,6 +38,7 @@ const SEARCH_QUERY = `
           additions
           deletions
           reviewDecision
+          mergeQueueEntry { position state }
           author { login avatarUrl }
           repository { nameWithOwner }
           comments { totalCount }
@@ -212,6 +213,7 @@ function toPr(node, viewerLogin) {
       resolved: node.reviewThreads.nodes.filter((t) => t.isResolved).length,
     },
     reviewDecision: node.reviewDecision,
+    mergeQueue: node.mergeQueueEntry,
     checks: node.commits.nodes[0]?.commit.statusCheckRollup?.state ?? null,
     reviewRequestedFromMe: requested,
     reviewRequestedAt: requested ? reviewRequestedAt(node, viewerLogin) : null,
@@ -230,7 +232,7 @@ function toPr(node, viewerLogin) {
 }
 
 // Most recently updated first, but PRs from the same stack stay together,
-// bottom of the stack first, at the slot of the stack's most recent PR.
+// top of the stack first, at the slot of the stack's most recent PR.
 function sortPrs(prs) {
   const byRecency = [...prs].sort((a, b) =>
     b.updatedAt.localeCompare(a.updatedAt),
@@ -247,7 +249,7 @@ function sortPrs(prs) {
     sorted.push(
       ...byRecency
         .filter((p) => p.stack?.key === pr.stack.key)
-        .sort((a, b) => a.stack.position - b.stack.position),
+        .sort((a, b) => b.stack.position - a.stack.position),
     );
   }
   return sorted;

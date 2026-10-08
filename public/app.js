@@ -1,4 +1,4 @@
-const AUTO_REFRESH_MS = 60 * 1000;
+const AUTO_REFRESH_MS = 30 * 1000;
 const SEEN_KEY = 'github-dashboard:seen';
 const STACK_COLORS_KEY = 'github-dashboard:stack-colors';
 const COLLAPSED_KEY = 'github-dashboard:collapsed-groups';
@@ -251,9 +251,23 @@ function threadsBadge({ total, resolved }) {
   });
 }
 
+// A PR in the merge queue only needs its queue status, in place of review state.
+function queueBadge({ position, state }) {
+  if (state === 'UNMERGEABLE') {
+    return badge('Queue failed', 'bad', { title: "The merge queue couldn't merge this PR" });
+  }
+  return badge(`Queued · #${position}`, 'pending', { title: `In the merge queue (${state.toLowerCase().replace('_', ' ')})` });
+}
+
 function renderBadges(pr, section) {
   const badges = [];
   if (pr.isDraft) badges.push(badge('Draft', 'muted'));
+
+  if (pr.mergeQueue) {
+    badges.push(queueBadge(pr.mergeQueue));
+    if (pr.threads && pr.threads.resolved < pr.threads.total) badges.push(threadsBadge(pr.threads));
+    return badges;
+  }
 
   if (section === 'mine' && readyToMerge(pr)) {
     badges.push(badge('Ready to merge', 'good'));
@@ -381,6 +395,11 @@ async function requestBugbot(pr, button) {
     button.classList.add('done');
     button.innerHTML = CHECK_ICON;
     button.title = 'Commented "bugbot run"';
+    setTimeout(() => {
+      button.classList.remove('done');
+      button.innerHTML = BUG_ICON;
+      button.title = 'Comment "bugbot run"';
+    }, 3000);
   } catch (error) {
     button.classList.add('failed');
     button.title = `Failed to comment: ${error.message}`;

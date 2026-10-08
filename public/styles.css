@@ -571,8 +571,8 @@ h2 {
 /* Buttons revealed on hover. The wrapper collapses to nothing at rest, so
    "what's new" sits next to the unread dot; hovering or focusing the card
    widens it and slides "what's new" left. The buttons keep their size and are
-   uncovered rather than stretched. It stays open after a bugbot comment so the
-   result can be seen. The negative margin cancels the .pr-actions gap. */
+   uncovered rather than stretched. It stays open for a few seconds after a
+   bugbot comment, and after a failed one, so the result can be seen. The negative margin cancels the .pr-actions gap. */
 .hover-actions {
   display: flex;
   flex-shrink: 0;

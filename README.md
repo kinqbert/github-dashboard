@@ -30,7 +30,7 @@ read.
 Each column is split by last update: last 24 hours, 7 days, 30 days, and older. Click a group's
 header to collapse it; collapsed groups stay collapsed across reloads.
 
-The page refreshes every minute while the tab is visible.
+The page refreshes every 30 seconds while the tab is visible.
 
 ## Run it
 
