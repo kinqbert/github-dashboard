@@ -1,4 +1,4 @@
-# Caddy gets the HTTPS certificates automatically.
+# Installed to /etc/caddy/sites/ on the server, which the shared Caddy imports.
 prdashboard.app {
 	reverse_proxy 127.0.0.1:4321
 }

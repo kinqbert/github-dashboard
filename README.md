@@ -104,26 +104,33 @@ restrict third-party access have to approve the OAuth App before their private P
 ### Deploying to a server (Debian/Ubuntu)
 
 Pushing to `master` deploys automatically through
-[.github/workflows/deploy.yml](.github/workflows/deploy.yml): it uploads the code over SSH, writes
-`.env` from the repository's secrets, installs dependencies, and restarts the service.
+[.github/workflows/deploy.yml](.github/workflows/deploy.yml): it uploads the code over SSH as the
+`deploy` user, writes `.env` from the repository's secrets, installs dependencies, restarts the
+service, and installs [deploy/prdashboard.caddy](deploy/prdashboard.caddy).
+
+The server runs one shared Caddy for all projects. `/etc/caddy/Caddyfile` only contains
+`import /etc/caddy/sites/*.caddy`, and each project deploys its own site file there.
 
 One-time server setup, as root:
 
 ```bash
 curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
 apt install -y nodejs caddy rsync
-mkdir -p /opt/github-dashboard
+echo 'import /etc/caddy/sites/*.caddy' > /etc/caddy/Caddyfile
+mkdir -p /etc/caddy/sites /opt/github-dashboard
+chown deploy:deploy /etc/caddy/sites /opt/github-dashboard
+cp deploy/github-dashboard.service /etc/systemd/system/ && systemctl enable github-dashboard
+echo 'deploy ALL=(root) NOPASSWD: /usr/bin/systemctl reload-or-restart caddy, /usr/bin/systemctl restart github-dashboard' \
+  > /etc/sudoers.d/deploy && chmod 440 /etc/sudoers.d/deploy
 ```
-
-The workflow also installs [deploy/Caddyfile](deploy/Caddyfile), so set your domain there.
 
 Point the domain's DNS at the server and open ports 22, 80 and 443.
 
-Create a key for the workflow and allow it to log in:
+Create a key for the workflow and allow it to log in as `deploy`:
 
 ```bash
 ssh-keygen -t ed25519 -f deploy_key -N "" -C github-actions
-ssh-copy-id -i deploy_key.pub root@<server>
+ssh-copy-id -i deploy_key.pub deploy@<server>
 ssh-keyscan <server>     # output goes into SSH_KNOWN_HOSTS
 ```
 
@@ -136,6 +143,6 @@ Add these under the repository's **Settings → Secrets and variables → Action
 | `SSH_KNOWN_HOSTS` | output of `ssh-keyscan` |
 | `GH_CLIENT_ID`, `GH_CLIENT_SECRET` | from the OAuth App |
 | `SESSION_SECRET` | `openssl rand -hex 32`, generated once |
-| `BASE_URL` | e.g. `https://dash.example.com` |
+| `BASE_URL` | e.g. `https://prdashboard.app` |
 
 Then push to `master`, or run the workflow from the **Actions** tab.

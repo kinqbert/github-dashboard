@@ -11,7 +11,7 @@ concurrency:
 
 env:
   APP_DIR: /opt/github-dashboard
-  TARGET: root@${{ secrets.SSH_HOST }}
+  TARGET: deploy@${{ secrets.SSH_HOST }}
 
 jobs:
   deploy:
@@ -48,20 +48,18 @@ jobs:
         run: |
           printf 'GITHUB_CLIENT_ID=%s\nGITHUB_CLIENT_SECRET=%s\nSESSION_SECRET=%s\nBASE_URL=%s\n' \
             "$GITHUB_CLIENT_ID" "$GITHUB_CLIENT_SECRET" "$SESSION_SECRET" "$BASE_URL" \
-            | ssh "$TARGET" "umask 077 && cat > $APP_DIR/.env && chown www-data $APP_DIR/.env"
+            | ssh "$TARGET" "umask 077 && cat > $APP_DIR/.env"
 
+      # The deploy user may only run these two sudo commands (see README).
       - name: Install and restart
         run: |
           ssh "$TARGET" "
             set -e
             cd $APP_DIR
             npm ci --omit=dev
-            cp deploy/github-dashboard.service /etc/systemd/system/
-            systemctl daemon-reload
-            systemctl enable github-dashboard
-            systemctl restart github-dashboard
-            cp deploy/Caddyfile /etc/caddy/Caddyfile
-            systemctl reload caddy
+            sudo systemctl restart github-dashboard
+            cp deploy/prdashboard.caddy /etc/caddy/sites/
+            sudo systemctl reload-or-restart caddy
             for i in \$(seq 10); do curl -fs localhost:4321/ > /dev/null && exit 0; sleep 1; done
             journalctl -u github-dashboard -n 30 --no-pager
             exit 1

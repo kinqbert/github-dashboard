@@ -6,7 +6,7 @@ After=network.target
 WorkingDirectory=/opt/github-dashboard
 ExecStart=/usr/bin/node server.js
 Restart=always
-User=www-data
+User=deploy
 Environment=NODE_ENV=production
 
 [Install]
