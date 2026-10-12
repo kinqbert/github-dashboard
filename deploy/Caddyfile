@@ -1,4 +1,8 @@
-# Replace with your domain. Caddy gets the HTTPS certificate automatically.
-dash.example.com {
+# Caddy gets the HTTPS certificates automatically.
+prdashboard.app {
 	reverse_proxy 127.0.0.1:4321
+}
+
+www.prdashboard.app {
+	redir https://prdashboard.app{uri} permanent
 }

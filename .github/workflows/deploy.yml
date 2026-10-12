@@ -60,6 +60,8 @@ jobs:
             systemctl daemon-reload
             systemctl enable github-dashboard
             systemctl restart github-dashboard
+            cp deploy/Caddyfile /etc/caddy/Caddyfile
+            systemctl reload caddy
             for i in \$(seq 10); do curl -fs localhost:4321/ > /dev/null && exit 0; sleep 1; done
             journalctl -u github-dashboard -n 30 --no-pager
             exit 1

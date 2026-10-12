@@ -113,9 +113,9 @@ One-time server setup, as root:
 curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
 apt install -y nodejs caddy rsync
 mkdir -p /opt/github-dashboard
-# Edit the domain in deploy/Caddyfile, then copy it to /etc/caddy/Caddyfile
-systemctl reload caddy
 ```
+
+The workflow also installs [deploy/Caddyfile](deploy/Caddyfile), so set your domain there.
 
 Point the domain's DNS at the server and open ports 22, 80 and 443.
 
