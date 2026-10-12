@@ -103,20 +103,39 @@ restrict third-party access have to approve the OAuth App before their private P
 
 ### Deploying to a server (Debian/Ubuntu)
 
+Pushing to `master` deploys automatically through
+[.github/workflows/deploy.yml](.github/workflows/deploy.yml): it uploads the code over SSH, writes
+`.env` from the repository's secrets, installs dependencies, and restarts the service.
+
+One-time server setup, as root:
+
 ```bash
-apt install -y caddy                  # plus Node 18+ (e.g. from NodeSource)
-git clone <this repo> /opt/github-dashboard
-cd /opt/github-dashboard && npm ci --omit=dev
-# create .env as above, then:
-chown www-data .env && chmod 600 .env
-cp deploy/github-dashboard.service /etc/systemd/system/
-systemctl enable --now github-dashboard
-cp deploy/Caddyfile /etc/caddy/Caddyfile   # edit the domain first
+curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+apt install -y nodejs caddy rsync
+mkdir -p /opt/github-dashboard
+# Edit the domain in deploy/Caddyfile, then copy it to /etc/caddy/Caddyfile
 systemctl reload caddy
 ```
 
-Point the domain's DNS at the server and open ports 80 and 443. To update:
+Point the domain's DNS at the server and open ports 22, 80 and 443.
+
+Create a key for the workflow and allow it to log in:
 
 ```bash
-cd /opt/github-dashboard && git pull && npm ci --omit=dev && systemctl restart github-dashboard
+ssh-keygen -t ed25519 -f deploy_key -N "" -C github-actions
+ssh-copy-id -i deploy_key.pub root@<server>
+ssh-keyscan <server>     # output goes into SSH_KNOWN_HOSTS
 ```
+
+Add these under the repository's **Settings → Secrets and variables → Actions**:
+
+| Secret | Value |
+|---|---|
+| `SSH_HOST` | the server's IP or hostname |
+| `SSH_PRIVATE_KEY` | contents of `deploy_key` |
+| `SSH_KNOWN_HOSTS` | output of `ssh-keyscan` |
+| `GH_CLIENT_ID`, `GH_CLIENT_SECRET` | from the OAuth App |
+| `SESSION_SECRET` | `openssl rand -hex 32`, generated once |
+| `BASE_URL` | e.g. `https://dash.example.com` |
+
+Then push to `master`, or run the workflow from the **Actions** tab.
