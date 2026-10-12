@@ -29,73 +29,84 @@ const SECTIONS = {
   ],
 };
 
+// GitHub's GraphQL API gives up after about 10 seconds and answers with an HTML
+// error page, and the cost grows with every PR in a request. So we search for
+// PR ids first, then fetch the details in small batches in parallel.
 const SEARCH_QUERY = `
   query ($q: String!) {
     search(query: $q, type: ISSUE, first: 50) {
-      nodes {
-        ... on PullRequest {
-          id
+      nodes { ... on PullRequest { id } }
+    }
+  }
+`;
+
+const DETAILS_BATCH_SIZE = 10;
+
+const DETAILS_QUERY = `
+  query ($ids: [ID!]!) {
+    nodes(ids: $ids) {
+      ... on PullRequest {
+        id
+        number
+        title
+        url
+        isDraft
+        headRefName
+        createdAt
+        updatedAt
+        additions
+        deletions
+        reviewDecision
+        mergeQueueEntry { position state }
+        author { login avatarUrl }
+        repository { nameWithOwner }
+        comments { totalCount }
+        reviewThreads(first: 100) { totalCount nodes { isResolved } }
+        reviewRequests(first: 20) {
+          nodes { requestedReviewer { ... on User { login } } }
+        }
+        requestEvents: timelineItems(last: 10, itemTypes: [REVIEW_REQUESTED_EVENT]) {
+          nodes {
+            ... on ReviewRequestedEvent {
+              createdAt
+              requestedReviewer { ... on User { login } }
+            }
+          }
+        }
+        commits(last: 1) {
+          nodes { commit { statusCheckRollup { state } } }
+        }
+        stackEntry { position }
+        stack {
           number
-          title
-          url
-          isDraft
-          headRefName
-          createdAt
-          updatedAt
-          additions
-          deletions
-          reviewDecision
-          mergeQueueEntry { position state }
-          author { login avatarUrl }
-          repository { nameWithOwner }
-          comments { totalCount }
-          reviewThreads(first: 100) { totalCount nodes { isResolved } }
-          reviewRequests(first: 20) {
-            nodes { requestedReviewer { ... on User { login } } }
+          size
+          entries(first: 30) {
+            nodes { position pullRequest { number title url state } }
           }
-          requestEvents: timelineItems(last: 10, itemTypes: [REVIEW_REQUESTED_EVENT]) {
-            nodes {
-              ... on ReviewRequestedEvent {
-                createdAt
-                requestedReviewer { ... on User { login } }
-              }
+        }
+        timelineItems(
+          last: 20
+          itemTypes: [
+            ISSUE_COMMENT
+            PULL_REQUEST_REVIEW
+            PULL_REQUEST_COMMIT
+            HEAD_REF_FORCE_PUSHED_EVENT
+            READY_FOR_REVIEW_EVENT
+            REVIEW_REQUESTED_EVENT
+          ]
+        ) {
+          nodes {
+            __typename
+            ... on IssueComment { createdAt author { login } }
+            ... on PullRequestReview { createdAt author { login } }
+            ... on PullRequestCommit {
+              commit { committedDate author { user { login } } }
             }
-          }
-          commits(last: 1) {
-            nodes { commit { statusCheckRollup { state } } }
-          }
-          stackEntry { position }
-          stack {
-            number
-            size
-            entries(first: 30) {
-              nodes { position pullRequest { number title url state } }
-            }
-          }
-          timelineItems(
-            last: 20
-            itemTypes: [
-              ISSUE_COMMENT
-              PULL_REQUEST_REVIEW
-              PULL_REQUEST_COMMIT
-              HEAD_REF_FORCE_PUSHED_EVENT
-              READY_FOR_REVIEW_EVENT
-              REVIEW_REQUESTED_EVENT
-            ]
-          ) {
-            nodes {
-              __typename
-              ... on IssueComment { createdAt author { login } }
-              ... on PullRequestReview { createdAt author { login } }
-              ... on PullRequestCommit {
-                commit { committedDate author { user { login } } }
-              }
-              ... on HeadRefForcePushedEvent { createdAt actor { login } }
-              ... on ReadyForReviewEvent { createdAt actor { login } }
-              ... on ReviewRequestedEvent {
-                createdAt
-                requestedReviewer { ... on User { login } }
-              }
+            ... on HeadRefForcePushedEvent { createdAt actor { login } }
+            ... on ReadyForReviewEvent { createdAt actor { login } }
+            ... on ReviewRequestedEvent {
+              createdAt
+              requestedReviewer { ... on User { login } }
             }
           }
         }
@@ -137,7 +148,9 @@ function resolveToken() {
 
 const localToken = OAUTH ? null : resolveToken();
 
-async function graphql(token, query, variables) {
+const RETRY_STATUSES = new Set([502, 503, 504]);
+
+async function graphql(token, query, variables, retries = 1) {
   const res = await fetch("https://api.github.com/graphql", {
     method: "POST",
     headers: {
@@ -147,6 +160,15 @@ async function graphql(token, query, variables) {
     },
     body: JSON.stringify({ query, variables }),
   });
+  // Timeouts and outages come back as HTML, not JSON.
+  if (!res.headers.get("content-type")?.includes("application/json")) {
+    if (retries > 0 && RETRY_STATUSES.has(res.status)) {
+      return graphql(token, query, variables, retries - 1);
+    }
+    const error = new Error(`GitHub API ${res.status}: ${res.statusText}`);
+    error.status = res.status;
+    throw error;
+  }
   const body = await res.json();
   if (!res.ok || body.errors) {
     const message =
@@ -291,13 +313,21 @@ async function fetchSection(token, queries, viewerLogin) {
       }),
     ),
   );
-  const byId = new Map();
-  for (const result of results) {
-    for (const node of result.search.nodes) {
-      if (!byId.has(node.id)) byId.set(node.id, toPr(node, viewerLogin));
-    }
+  const ids = [
+    ...new Set(results.flatMap((r) => r.search.nodes.map((n) => n.id))),
+  ];
+  const batches = [];
+  for (let i = 0; i < ids.length; i += DETAILS_BATCH_SIZE) {
+    batches.push(ids.slice(i, i + DETAILS_BATCH_SIZE));
   }
-  return sortPrs([...byId.values()]);
+  const details = await Promise.all(
+    batches.map((batch) => graphql(token, DETAILS_QUERY, { ids: batch })),
+  );
+  const prs = details
+    .flatMap((d) => d.nodes)
+    .filter(Boolean)
+    .map((node) => toPr(node, viewerLogin));
+  return sortPrs(prs);
 }
 
 async function fetchDashboard({ token, viewer }) {
