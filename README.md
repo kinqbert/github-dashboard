@@ -52,7 +52,7 @@ GITHUB_TOKEN=ghp_... npm start
 PORT=5000 npm start
 ```
 
-The server only listens on `127.0.0.1` (change it with `HOST`), so the token is never exposed outside your machine.
+The server only listens on `127.0.0.1`, so the token is never exposed outside your machine.
 
 ## Changing what's shown
 
@@ -78,71 +78,3 @@ take precedence over values in `.env`. The `.env` file is ignored by Git.
 The GitHub search queries for each column live in `SECTIONS` at the top of `server.js`. For
 example, to include review requests sent to teams you belong to, change
 `user-review-requested:@me` to `review-requested:@me`.
-
-## Hosting it for others
-
-Set `GITHUB_CLIENT_ID` and the server switches to multi-user mode: each visitor signs in with
-GitHub and sees their own PRs, using their own token. Without it, the server runs as you, as above.
-
-1. Create an OAuth App at **GitHub → Settings → Developer settings → OAuth Apps**. Set the
-   callback URL to `https://<your domain>/auth/callback`.
-2. Put the settings in `.env` on the server:
-
-   ```dotenv
-   GITHUB_CLIENT_ID=...
-   GITHUB_CLIENT_SECRET=...
-   BASE_URL=https://dash.example.com
-   SESSION_SECRET=...   # any long random string, e.g. `openssl rand -hex 32`
-   ```
-
-Sessions are stored in an encrypted cookie, so there's no database and visitors stay signed in
-across restarts for 30 days. Changing `SESSION_SECRET` signs everyone out.
-
-The app asks for the `repo` scope so it can show private repositories. Organizations that
-restrict third-party access have to approve the OAuth App before their private PRs show up.
-
-### Deploying to a server (Debian/Ubuntu)
-
-Pushing to `master` deploys automatically through
-[.github/workflows/deploy.yml](.github/workflows/deploy.yml): it uploads the code over SSH as the
-`deploy` user, writes `.env` from the repository's secrets, installs dependencies, restarts the
-service, and installs [deploy/prdashboard.caddy](deploy/prdashboard.caddy).
-
-The server runs one shared Caddy for all projects. `/etc/caddy/Caddyfile` only contains
-`import /etc/caddy/sites/*.caddy`, and each project deploys its own site file there.
-
-One-time server setup, as root:
-
-```bash
-curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
-apt install -y nodejs caddy rsync
-echo 'import /etc/caddy/sites/*.caddy' > /etc/caddy/Caddyfile
-mkdir -p /etc/caddy/sites /opt/github-dashboard
-chown deploy:deploy /etc/caddy/sites /opt/github-dashboard
-cp deploy/github-dashboard.service /etc/systemd/system/ && systemctl enable github-dashboard
-echo 'deploy ALL=(root) NOPASSWD: /usr/bin/systemctl reload-or-restart caddy, /usr/bin/systemctl restart github-dashboard' \
-  > /etc/sudoers.d/deploy && chmod 440 /etc/sudoers.d/deploy
-```
-
-Point the domain's DNS at the server and open ports 22, 80 and 443.
-
-Create a key for the workflow and allow it to log in as `deploy`:
-
-```bash
-ssh-keygen -t ed25519 -f deploy_key -N "" -C github-actions
-ssh-copy-id -i deploy_key.pub deploy@<server>
-ssh-keyscan <server>     # output goes into SSH_KNOWN_HOSTS
-```
-
-Add these under the repository's **Settings → Secrets and variables → Actions**:
-
-| Secret | Value |
-|---|---|
-| `SSH_HOST` | the server's IP or hostname |
-| `SSH_PRIVATE_KEY` | contents of `deploy_key` |
-| `SSH_KNOWN_HOSTS` | output of `ssh-keyscan` |
-| `GH_CLIENT_ID`, `GH_CLIENT_SECRET` | from the OAuth App |
-| `SESSION_SECRET` | `openssl rand -hex 32`, generated once |
-| `BASE_URL` | e.g. `https://prdashboard.app` |
-
-Then push to `master`, or run the workflow from the **Actions** tab.

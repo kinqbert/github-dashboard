@@ -35,7 +35,6 @@ const statusEl = document.getElementById('status');
 const refreshBtn = document.getElementById('refresh');
 const filterEl = document.getElementById('filter');
 const avatarEl = document.getElementById('avatar');
-const logoutEl = document.getElementById('logout');
 const summaryEl = document.getElementById('summary');
 const faviconEl = document.getElementById('favicon');
 const compactBtn = document.getElementById('compact');
@@ -648,15 +647,10 @@ async function load() {
   }
   try {
     const res = await fetch('/api/prs');
-    if (res.status === 401) {
-      location.href = '/login';
-      return;
-    }
     const body = await res.json();
     if (!res.ok) throw new Error(body.error ?? res.statusText);
     data = body;
     avatarEl.src = data.viewer.avatarUrl;
-    logoutEl.hidden = !data.canSignOut;
     statusEl.textContent = `Updated ${new Date(data.fetchedAt).toLocaleTimeString()}`;
     assignStackColors();
     if (seen === null) markRead(allPrs());

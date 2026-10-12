@@ -1,18 +1,11 @@
 import "dotenv/config";
 import { execFileSync, spawn } from "node:child_process";
-import {
-  createCipheriv,
-  createDecipheriv,
-  createHash,
-  randomBytes,
-} from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const PORT = Number(process.env.PORT ?? 4321);
-const HOST = process.env.HOST ?? "127.0.0.1";
 const GITHUB_REPO = process.env.GITHUB_REPO?.trim() ?? "";
 if (GITHUB_REPO && !/^[a-zA-Z0-9-]+\/[a-zA-Z0-9_.-]+$/.test(GITHUB_REPO)) {
   throw new Error(
@@ -115,25 +108,6 @@ const DETAILS_QUERY = `
   }
 `;
 
-// With GITHUB_CLIENT_ID set, each visitor signs in with GitHub and the
-// dashboard uses their token. Without it, everything runs as the local user.
-const OAUTH = process.env.GITHUB_CLIENT_ID
-  ? {
-      clientId: process.env.GITHUB_CLIENT_ID,
-      clientSecret: requireEnv("GITHUB_CLIENT_SECRET"),
-      baseUrl: requireEnv("BASE_URL").replace(/\/$/, ""),
-      sessionKey: createHash("sha256")
-        .update(requireEnv("SESSION_SECRET"))
-        .digest(),
-    }
-  : null;
-
-function requireEnv(name) {
-  const value = process.env[name];
-  if (!value) throw new Error(`${name} must be set when GITHUB_CLIENT_ID is.`);
-  return value;
-}
-
 function resolveToken() {
   if (process.env.GITHUB_TOKEN) return process.env.GITHUB_TOKEN;
   try {
@@ -146,11 +120,11 @@ function resolveToken() {
   }
 }
 
-const localToken = OAUTH ? null : resolveToken();
+const token = resolveToken();
 
 const RETRY_STATUSES = new Set([502, 503, 504]);
 
-async function graphql(token, query, variables, retries = 1) {
+async function graphql(query, variables, retries = 1) {
   const res = await fetch("https://api.github.com/graphql", {
     method: "POST",
     headers: {
@@ -163,25 +137,21 @@ async function graphql(token, query, variables, retries = 1) {
   // Timeouts and outages come back as HTML, not JSON.
   if (!res.headers.get("content-type")?.includes("application/json")) {
     if (retries > 0 && RETRY_STATUSES.has(res.status)) {
-      return graphql(token, query, variables, retries - 1);
+      return graphql(query, variables, retries - 1);
     }
-    const error = new Error(`GitHub API ${res.status}: ${res.statusText}`);
-    error.status = res.status;
-    throw error;
+    throw new Error(`GitHub API ${res.status}: ${res.statusText}`);
   }
   const body = await res.json();
   if (!res.ok || body.errors) {
     const message =
       body.errors?.map((e) => e.message).join("; ") ?? res.statusText;
-    const error = new Error(`GitHub API ${res.status}: ${message}`);
-    error.status = res.status;
-    throw error;
+    throw new Error(`GitHub API ${res.status}: ${message}`);
   }
   return body.data;
 }
 
-async function fetchViewer(token) {
-  const data = await graphql(token, "query { viewer { login avatarUrl } }");
+async function fetchViewer() {
+  const data = await graphql("query { viewer { login avatarUrl } }");
   return data.viewer;
 }
 
@@ -305,10 +275,10 @@ function sortPrs(prs) {
   return sorted;
 }
 
-async function fetchSection(token, queries, viewerLogin) {
+async function fetchSection(queries, viewerLogin) {
   const results = await Promise.all(
     queries.map((q) =>
-      graphql(token, SEARCH_QUERY, {
+      graphql(SEARCH_QUERY, {
         q: GITHUB_REPO ? `${q} repo:${GITHUB_REPO}` : q,
       }),
     ),
@@ -321,7 +291,7 @@ async function fetchSection(token, queries, viewerLogin) {
     batches.push(ids.slice(i, i + DETAILS_BATCH_SIZE));
   }
   const details = await Promise.all(
-    batches.map((batch) => graphql(token, DETAILS_QUERY, { ids: batch })),
+    batches.map((batch) => graphql(DETAILS_QUERY, { ids: batch })),
   );
   const prs = details
     .flatMap((d) => d.nodes)
@@ -330,16 +300,22 @@ async function fetchSection(token, queries, viewerLogin) {
   return sortPrs(prs);
 }
 
-async function fetchDashboard({ token, viewer }) {
+let viewerPromise;
+
+async function fetchDashboard() {
+  viewerPromise ??= fetchViewer().catch((error) => {
+    viewerPromise = undefined;
+    throw error;
+  });
+  const viewer = await viewerPromise;
   const entries = await Promise.all(
     Object.entries(SECTIONS).map(async ([key, queries]) => [
       key,
-      await fetchSection(token, queries, viewer.login),
+      await fetchSection(queries, viewer.login),
     ]),
   );
   return {
     viewer,
-    canSignOut: Boolean(OAUTH),
     fetchedAt: new Date().toISOString(),
     ...Object.fromEntries(entries),
   };
@@ -348,9 +324,8 @@ async function fetchDashboard({ token, viewer }) {
 const BUGBOT_COMMENT = "bugbot run";
 
 // Comments on the PR as the token's user, which asks Bugbot to review it.
-async function requestBugbot(token, prId) {
+async function requestBugbot(prId) {
   await graphql(
-    token,
     `mutation ($id: ID!, $body: String!) {
       addComment(input: { subjectId: $id, body: $body }) { clientMutationId }
     }`,
@@ -362,117 +337,6 @@ async function readJsonBody(req) {
   let raw = "";
   for await (const chunk of req) raw += chunk;
   return JSON.parse(raw || "{}");
-}
-
-// Sessions live in an encrypted cookie, so the server keeps no state and
-// visitors stay signed in across restarts.
-const SESSION_COOKIE = "session";
-const STATE_COOKIE = "oauth_state";
-const SESSION_MAX_AGE = 60 * 60 * 24 * 30;
-
-function seal(value) {
-  const iv = randomBytes(12);
-  const cipher = createCipheriv("aes-256-gcm", OAUTH.sessionKey, iv);
-  const data = Buffer.concat([
-    cipher.update(JSON.stringify(value), "utf8"),
-    cipher.final(),
-  ]);
-  return Buffer.concat([iv, cipher.getAuthTag(), data]).toString("base64url");
-}
-
-function unseal(sealed) {
-  try {
-    const raw = Buffer.from(sealed, "base64url");
-    const decipher = createDecipheriv(
-      "aes-256-gcm",
-      OAUTH.sessionKey,
-      raw.subarray(0, 12),
-    );
-    decipher.setAuthTag(raw.subarray(12, 28));
-    return JSON.parse(
-      Buffer.concat([decipher.update(raw.subarray(28)), decipher.final()]),
-    );
-  } catch {
-    return null;
-  }
-}
-
-function readCookies(req) {
-  const cookies = {};
-  for (const part of req.headers.cookie?.split(";") ?? []) {
-    const index = part.indexOf("=");
-    if (index > 0) {
-      cookies[part.slice(0, index).trim()] = part.slice(index + 1).trim();
-    }
-  }
-  return cookies;
-}
-
-function cookie(name, value, maxAge) {
-  const secure = OAUTH.baseUrl.startsWith("https:") ? "; Secure" : "";
-  return `${name}=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${secure}`;
-}
-
-let localViewerPromise;
-
-// The signed-in user's token and profile, or null if nobody is signed in.
-async function getSession(req) {
-  if (!OAUTH) {
-    localViewerPromise ??= fetchViewer(localToken).catch((error) => {
-      localViewerPromise = undefined;
-      throw error;
-    });
-    return { token: localToken, viewer: await localViewerPromise };
-  }
-  const sealed = readCookies(req)[SESSION_COOKIE];
-  return sealed ? unseal(sealed) : null;
-}
-
-function startSignIn(res) {
-  const state = randomBytes(16).toString("hex");
-  const url = new URL("https://github.com/login/oauth/authorize");
-  url.search = new URLSearchParams({
-    client_id: OAUTH.clientId,
-    redirect_uri: `${OAUTH.baseUrl}/auth/callback`,
-    scope: "repo",
-    state,
-  });
-  res
-    .writeHead(302, {
-      Location: url.href,
-      "Set-Cookie": cookie(STATE_COOKIE, state, 600),
-    })
-    .end();
-}
-
-async function finishSignIn(req, res, params) {
-  const state = readCookies(req)[STATE_COOKIE];
-  if (!state || params.get("state") !== state || !params.get("code")) {
-    res.writeHead(400).end("Sign-in failed. Go back and try again.");
-    return;
-  }
-  const tokenRes = await fetch("https://github.com/login/oauth/access_token", {
-    method: "POST",
-    headers: { Accept: "application/json", "Content-Type": "application/json" },
-    body: JSON.stringify({
-      client_id: OAUTH.clientId,
-      client_secret: OAUTH.clientSecret,
-      code: params.get("code"),
-      redirect_uri: `${OAUTH.baseUrl}/auth/callback`,
-    }),
-  });
-  const { access_token: token, error_description } = await tokenRes.json();
-  if (!token) throw new Error(`GitHub sign-in failed: ${error_description}`);
-  const viewer = await fetchViewer(token);
-  res
-    .writeHead(302, {
-      Location: "/",
-      "Set-Cookie": [
-        cookie(SESSION_COOKIE, seal({ token, viewer }), SESSION_MAX_AGE),
-        cookie(STATE_COOKIE, "", 0),
-      ],
-    })
-    .end();
 }
 
 const STATIC_FILES = new Set(["index.html", "app.js", "styles.css"]);
@@ -496,41 +360,10 @@ async function serveStatic(pathname, res) {
 }
 
 createServer(async (req, res) => {
-  const { pathname, searchParams } = new URL(
-    req.url,
-    `http://${req.headers.host}`,
-  );
+  const { pathname } = new URL(req.url, `http://${req.headers.host}`);
   try {
-    if (OAUTH && pathname === "/login") {
-      startSignIn(res);
-      return;
-    }
-    if (OAUTH && pathname === "/auth/callback") {
-      await finishSignIn(req, res, searchParams);
-      return;
-    }
-    if (OAUTH && pathname === "/logout" && req.method === "POST") {
-      res
-        .writeHead(303, {
-          Location: "/login",
-          "Set-Cookie": cookie(SESSION_COOKIE, "", 0),
-        })
-        .end();
-      return;
-    }
-    if (!pathname.startsWith("/api/")) {
-      await serveStatic(pathname, res);
-      return;
-    }
-    const session = await getSession(req);
-    if (!session) {
-      res
-        .writeHead(401, { "Content-Type": "application/json" })
-        .end(JSON.stringify({ error: "Not signed in" }));
-      return;
-    }
     if (pathname === "/api/prs") {
-      const data = await fetchDashboard(session);
+      const data = await fetchDashboard();
       res
         .writeHead(200, { "Content-Type": "application/json" })
         .end(JSON.stringify(data));
@@ -549,25 +382,23 @@ createServer(async (req, res) => {
           .end(JSON.stringify({ error: "Missing PR id" }));
         return;
       }
-      await requestBugbot(session.token, id);
+      await requestBugbot(id);
       res
         .writeHead(200, { "Content-Type": "application/json" })
         .end(JSON.stringify({ ok: true }));
       return;
     }
-    res.writeHead(404).end("Not found");
+    await serveStatic(pathname, res);
   } catch (error) {
     console.error(error);
-    // A revoked or expired token: send the visitor back through sign-in.
-    const status = OAUTH && error.status === 401 ? 401 : 500;
     res
-      .writeHead(status, { "Content-Type": "application/json" })
+      .writeHead(500, { "Content-Type": "application/json" })
       .end(JSON.stringify({ error: error.message }));
   }
-}).listen(PORT, HOST, () => {
-  const url = OAUTH?.baseUrl ?? `http://localhost:${PORT}`;
+}).listen(PORT, "127.0.0.1", () => {
+  const url = `http://localhost:${PORT}`;
   console.log(`GitHub dashboard running at ${url}`);
-  if (!OAUTH && !process.argv.includes("--no-open")) openBrowser(url);
+  if (!process.argv.includes("--no-open")) openBrowser(url);
 });
 
 // Opens the URL in the default browser. Failing to open it isn't an error: the
