@@ -1,0 +1,4 @@
+# Replace with your domain. Caddy gets the HTTPS certificate automatically.
+dash.example.com {
+	reverse_proxy 127.0.0.1:4321
+}

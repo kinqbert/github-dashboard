@@ -52,7 +52,7 @@ GITHUB_TOKEN=ghp_... npm start
 PORT=5000 npm start
 ```
 
-The server only listens on `127.0.0.1`, so the token is never exposed outside your machine.
+The server only listens on `127.0.0.1` (change it with `HOST`), so the token is never exposed outside your machine.
 
 ## Changing what's shown
 
@@ -78,3 +78,45 @@ take precedence over values in `.env`. The `.env` file is ignored by Git.
 The GitHub search queries for each column live in `SECTIONS` at the top of `server.js`. For
 example, to include review requests sent to teams you belong to, change
 `user-review-requested:@me` to `review-requested:@me`.
+
+## Hosting it for others
+
+Set `GITHUB_CLIENT_ID` and the server switches to multi-user mode: each visitor signs in with
+GitHub and sees their own PRs, using their own token. Without it, the server runs as you, as above.
+
+1. Create an OAuth App at **GitHub → Settings → Developer settings → OAuth Apps**. Set the
+   callback URL to `https://<your domain>/auth/callback`.
+2. Put the settings in `.env` on the server:
+
+   ```dotenv
+   GITHUB_CLIENT_ID=...
+   GITHUB_CLIENT_SECRET=...
+   BASE_URL=https://dash.example.com
+   SESSION_SECRET=...   # any long random string, e.g. `openssl rand -hex 32`
+   ```
+
+Sessions are stored in an encrypted cookie, so there's no database and visitors stay signed in
+across restarts for 30 days. Changing `SESSION_SECRET` signs everyone out.
+
+The app asks for the `repo` scope so it can show private repositories. Organizations that
+restrict third-party access have to approve the OAuth App before their private PRs show up.
+
+### Deploying to a server (Debian/Ubuntu)
+
+```bash
+apt install -y caddy                  # plus Node 18+ (e.g. from NodeSource)
+git clone <this repo> /opt/github-dashboard
+cd /opt/github-dashboard && npm ci --omit=dev
+# create .env as above, then:
+chown www-data .env && chmod 600 .env
+cp deploy/github-dashboard.service /etc/systemd/system/
+systemctl enable --now github-dashboard
+cp deploy/Caddyfile /etc/caddy/Caddyfile   # edit the domain first
+systemctl reload caddy
+```
+
+Point the domain's DNS at the server and open ports 80 and 443. To update:
+
+```bash
+cd /opt/github-dashboard && git pull && npm ci --omit=dev && systemctl restart github-dashboard
+```
