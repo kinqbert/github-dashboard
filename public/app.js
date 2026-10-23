@@ -201,7 +201,7 @@ function diffBar(additions, deletions) {
 }
 
 // A short description of what others did since the PR was last marked as read,
-// such as "2 new comments · new commits".
+// such as "new PR · review requested".
 function whatsNew(pr) {
   const seenAt = seen?.[pr.id];
   const counts = {};
@@ -211,11 +211,6 @@ function whatsNew(pr) {
   const parts = [];
   if (counts.opened) parts.push('new PR');
   if (counts['review-requested']) parts.push('review requested');
-  if (counts.ready) parts.push('ready for review');
-  if (counts.review) parts.push(counts.review === 1 ? 'new review' : `${counts.review} new reviews`);
-  if (counts.comment) parts.push(counts.comment === 1 ? 'new comment' : `${counts.comment} new comments`);
-  if (counts.commit) parts.push(counts.commit === 1 ? 'new commit' : `${counts.commit} new commits`);
-  if (counts['force-push']) parts.push('force-pushed');
   return parts.join(' · ');
 }
 

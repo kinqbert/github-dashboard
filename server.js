@@ -36,7 +36,7 @@ const SEARCH_QUERY = `
 const DETAILS_BATCH_SIZE = 10;
 
 const DETAILS_QUERY = `
-  query ($ids: [ID!]!) {
+  query ($ids: [ID!]!, $reviewing: Boolean!) {
     nodes(ids: $ids) {
       ... on PullRequest {
         id
@@ -55,10 +55,11 @@ const DETAILS_QUERY = `
         repository { nameWithOwner }
         comments { totalCount }
         reviewThreads(first: 100) { totalCount nodes { isResolved } }
-        reviewRequests(first: 20) {
+        reviewRequests(first: 20) @include(if: $reviewing) {
           nodes { requestedReviewer { ... on User { login } } }
         }
-        requestEvents: timelineItems(last: 10, itemTypes: [REVIEW_REQUESTED_EVENT]) {
+        requestEvents: timelineItems(last: 10, itemTypes: [REVIEW_REQUESTED_EVENT])
+          @include(if: $reviewing) {
           nodes {
             ... on ReviewRequestedEvent {
               createdAt
@@ -75,32 +76,6 @@ const DETAILS_QUERY = `
           size
           entries(first: 30) {
             nodes { position pullRequest { number title url state } }
-          }
-        }
-        timelineItems(
-          last: 20
-          itemTypes: [
-            ISSUE_COMMENT
-            PULL_REQUEST_REVIEW
-            PULL_REQUEST_COMMIT
-            HEAD_REF_FORCE_PUSHED_EVENT
-            READY_FOR_REVIEW_EVENT
-            REVIEW_REQUESTED_EVENT
-          ]
-        ) {
-          nodes {
-            __typename
-            ... on IssueComment { createdAt author { login } }
-            ... on PullRequestReview { createdAt author { login } }
-            ... on PullRequestCommit {
-              commit { committedDate author { user { login } } }
-            }
-            ... on HeadRefForcePushedEvent { createdAt actor { login } }
-            ... on ReadyForReviewEvent { createdAt actor { login } }
-            ... on ReviewRequestedEvent {
-              createdAt
-              requestedReviewer { ... on User { login } }
-            }
           }
         }
       }
@@ -155,46 +130,16 @@ async function fetchViewer() {
   return data.viewer;
 }
 
-const ACTIVITY_KINDS = {
-  IssueComment: "comment",
-  PullRequestReview: "review",
-  PullRequestCommit: "commit",
-  HeadRefForcePushedEvent: "force-push",
-  ReadyForReviewEvent: "ready",
-  ReviewRequestedEvent: "review-requested",
-};
-
-// Returns [who, when] for a timeline item, or null if it isn't news to the viewer.
-function timelineActivity(item, viewerLogin) {
-  switch (item.__typename) {
-    case "PullRequestCommit":
-      return [item.commit.author?.user?.login, item.commit.committedDate];
-    case "ReviewRequestedEvent":
-      return item.requestedReviewer?.login === viewerLogin
-        ? [null, item.createdAt]
-        : null;
-    case "IssueComment":
-    case "PullRequestReview":
-      return [item.author?.login, item.createdAt];
-    default:
-      return [item.actor?.login, item.createdAt];
-  }
-}
-
-// Activity by someone other than the viewer, oldest first: comments, reviews,
-// pushes, and review requests sent to the viewer. Someone else's PR also counts
-// its creation, so a new PR shows up as unread.
+// What's new to the viewer, oldest first: someone else opening the PR, and review
+// requests sent to the viewer. Only the "reviewing" section fetches the requests.
 function activityFromOthers(node, viewerLogin) {
   const activity =
     node.author?.login === viewerLogin
       ? []
       : [{ kind: "opened", at: node.createdAt }];
-  for (const item of node.timelineItems.nodes) {
-    const found = timelineActivity(item, viewerLogin);
-    if (!found) continue;
-    const [who, at] = found;
-    if (who !== viewerLogin) {
-      activity.push({ kind: ACTIVITY_KINDS[item.__typename], at });
+  for (const event of node.requestEvents?.nodes ?? []) {
+    if (event.requestedReviewer?.login === viewerLogin) {
+      activity.push({ kind: "review-requested", at: event.createdAt });
     }
   }
   return activity.sort((a, b) => a.at.localeCompare(b.at));
@@ -210,7 +155,7 @@ function reviewRequestedAt(node, viewerLogin) {
 }
 
 function toPr(node, viewerLogin) {
-  const requested = node.reviewRequests.nodes.some(
+  const requested = (node.reviewRequests?.nodes ?? []).some(
     (r) => r.requestedReviewer?.login === viewerLogin,
   );
   const activity = activityFromOthers(node, viewerLogin);
@@ -275,7 +220,7 @@ function sortPrs(prs) {
   return sorted;
 }
 
-async function fetchSection(queries, viewerLogin) {
+async function fetchSection(key, queries, viewerLogin) {
   const results = await Promise.all(
     queries.map((q) =>
       graphql(SEARCH_QUERY, {
@@ -291,7 +236,7 @@ async function fetchSection(queries, viewerLogin) {
     batches.push(ids.slice(i, i + DETAILS_BATCH_SIZE));
   }
   const details = await Promise.all(
-    batches.map((batch) => graphql(DETAILS_QUERY, { ids: batch })),
+    batches.map((batch) => graphql(DETAILS_QUERY, { ids: batch, reviewing: key === "reviewing" })),
   );
   const prs = details
     .flatMap((d) => d.nodes)
@@ -311,7 +256,7 @@ async function fetchDashboard() {
   const entries = await Promise.all(
     Object.entries(SECTIONS).map(async ([key, queries]) => [
       key,
-      await fetchSection(queries, viewer.login),
+      await fetchSection(key, queries, viewer.login),
     ]),
   );
   return {
