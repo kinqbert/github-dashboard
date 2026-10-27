@@ -19,8 +19,8 @@ or a review request to you) since you last marked them as read, with a line sayi
 it, or use "Mark all as read". The tab title and favicon
 show the unread count.
 
-Your own PRs show "Ready to merge" (approved, checks passing) or "Needs your fix" (changes
-requested or checks failing), and those come first in each group. PRs waiting on your review show
+Your own PRs show "Ready to merge" (approved, checks passing). Ones with changes requested or
+failing checks come first in each group, then ones ready to merge. PRs waiting on your review show
 how long they've been waiting. Check badges link to the PR's checks page.
 
 Quick filters (Unread, Needs my review, Failing, Hide drafts) and a compact one-line-per-PR view

@@ -271,12 +271,7 @@ function renderBadges(pr, section) {
     return badges;
   }
 
-  if (section === 'mine' && needsFix(pr)) {
-    const reasons = [];
-    if (pr.reviewDecision === 'CHANGES_REQUESTED') reasons.push('changes requested');
-    if (FAILING_CHECKS.has(pr.checks)) reasons.push('checks failing');
-    badges.push(badge('Needs your fix', 'bad', { title: `Because: ${reasons.join(', ')}` }));
-  } else if (REVIEW_LABELS[pr.reviewDecision]) {
+  if (REVIEW_LABELS[pr.reviewDecision]) {
     badges.push(badge(...REVIEW_LABELS[pr.reviewDecision]));
   }
 
