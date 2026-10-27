@@ -6,13 +6,13 @@ const FILTERS_KEY = 'github-dashboard:filters';
 const COMPACT_KEY = 'github-dashboard:compact';
 
 const STACK_PALETTE = [
-  '#a371f7',
+  '#39c5cf',
   '#db61a2',
   '#f0883e',
   '#26a69a',
   '#4c9aff',
   '#c9a227',
-  '#7d8cff',
+  '#b08968',
   '#8fbf3c',
 ];
 
