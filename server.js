@@ -75,7 +75,10 @@ const DETAILS_QUERY = `
           number
           size
           entries(first: 30) {
-            nodes { position pullRequest { number title url state } }
+            nodes {
+              position
+              pullRequest { id number title url state author { login } }
+            }
           }
         }
       }
@@ -154,6 +157,14 @@ function reviewRequestedAt(node, viewerLogin) {
   return times.at(-1) ?? null;
 }
 
+// A stack is the viewer's when they authored every PR in it that's still open.
+// Merged and closed PRs don't count, since lower PRs often merge first.
+function isOwnStack(entries, viewerLogin) {
+  return entries
+    .filter((e) => e.pullRequest.state === "OPEN")
+    .every((e) => e.pullRequest.author?.login === viewerLogin);
+}
+
 function toPr(node, viewerLogin) {
   const requested = (node.reviewRequests?.nodes ?? []).some(
     (r) => r.requestedReviewer?.login === viewerLogin,
@@ -189,8 +200,9 @@ function toPr(node, viewerLogin) {
       number: node.stack.number,
       size: node.stack.size,
       position: node.stackEntry.position,
+      isMine: isOwnStack(node.stack.entries.nodes, viewerLogin),
       entries: node.stack.entries.nodes
-        .map((e) => ({ position: e.position, ...e.pullRequest }))
+        .map(({ position, pullRequest: { author, ...pr } }) => ({ position, ...pr }))
         .sort((a, b) => a.position - b.position),
     },
   };
@@ -247,12 +259,17 @@ async function fetchSection(key, queries, viewerLogin) {
 
 let viewerPromise;
 
-async function fetchDashboard() {
+// The token's user, fetched once and reused.
+function getViewer() {
   viewerPromise ??= fetchViewer().catch((error) => {
     viewerPromise = undefined;
     throw error;
   });
-  const viewer = await viewerPromise;
+  return viewerPromise;
+}
+
+async function fetchDashboard() {
+  const viewer = await getViewer();
   const entries = await Promise.all(
     Object.entries(SECTIONS).map(async ([key, queries]) => [
       key,
@@ -276,6 +293,37 @@ async function requestBugbot(prId) {
     }`,
     { id: prId, body: BUGBOT_COMMENT },
   );
+}
+
+// Comments "bugbot run" on each PR of one of the viewer's stacks, one at a time so
+// GitHub's secondary rate limit doesn't kick in. Refuses PRs the viewer didn't open
+// or that aren't open, so the "own stacks only" rule doesn't rest on the page alone.
+async function requestBugbotForStack(prIds) {
+  const [viewer, { nodes }] = await Promise.all([
+    getViewer(),
+    graphql(
+      `query ($ids: [ID!]!) {
+        nodes(ids: $ids) { ... on PullRequest { state author { login } } }
+      }`,
+      { ids: prIds },
+    ),
+  ]);
+  const allMine = nodes.every(
+    (n) => n?.state === "OPEN" && n.author?.login === viewer.login,
+  );
+  if (!allMine) {
+    throw new Error("Only open PRs you authored can be sent to Bugbot in bulk");
+  }
+  const results = [];
+  for (const id of prIds) {
+    try {
+      await requestBugbot(id);
+      results.push({ id, ok: true });
+    } catch (error) {
+      results.push({ id, ok: false, error: error.message });
+    }
+  }
+  return results;
 }
 
 async function readJsonBody(req) {
@@ -331,6 +379,28 @@ createServer(async (req, res) => {
       res
         .writeHead(200, { "Content-Type": "application/json" })
         .end(JSON.stringify({ ok: true }));
+      return;
+    }
+    if (
+      pathname === "/api/bugbot/stack" &&
+      req.method === "POST" &&
+      req.headers["content-type"] === "application/json"
+    ) {
+      const { ids } = await readJsonBody(req);
+      if (
+        !Array.isArray(ids) ||
+        !ids.length ||
+        !ids.every((id) => typeof id === "string" && id)
+      ) {
+        res
+          .writeHead(400, { "Content-Type": "application/json" })
+          .end(JSON.stringify({ error: "Missing PR ids" }));
+        return;
+      }
+      const results = await requestBugbotForStack(ids);
+      res
+        .writeHead(200, { "Content-Type": "application/json" })
+        .end(JSON.stringify({ results }));
       return;
     }
     await serveStatic(pathname, res);

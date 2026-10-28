@@ -991,6 +991,43 @@ button .spinner {
   text-decoration: line-through;
 }
 
+.stack-bugbot,
+.stack-bugbot:hover:not(:disabled) {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  padding: 6px 8px;
+  border: 0;
+  border-top: 1px solid var(--border);
+  border-radius: 0 0 4px 4px;
+  background: none;
+  box-shadow: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.stack-bugbot:hover:not(:disabled) {
+  background: var(--panel-2);
+  color: var(--text);
+}
+
+.stack-bugbot:disabled {
+  cursor: progress;
+}
+
+.stack-bugbot.done {
+  color: var(--good);
+}
+
+.stack-bugbot.failed {
+  color: var(--bad);
+}
+
 a.badge {
   text-decoration: none;
 }

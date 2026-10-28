@@ -237,7 +237,18 @@ function renderStack(pr) {
     innerHTML: STACK_ICON,
   });
   chip.append(`Stack ${stack.position}/${stack.size}`);
+  const open = stack.entries.filter((entry) => entry.state === 'OPEN');
+  if (stack.isMine && open.length > 1) entries.push(stackBugbotButton(open));
   return el('span', { className: 'stack' }, [chip, el('span', { className: 'stack-pop' }, entries)]);
+}
+
+// Bottom of the stack popover on the viewer's own stacks: comments "bugbot run" on every open PR.
+function stackBugbotButton(open) {
+  const label = `Run Bugbot on all ${open.length}`;
+  const button = el('button', { type: 'button', className: 'stack-bugbot', innerHTML: BUG_ICON });
+  button.append(label);
+  button.addEventListener('click', () => requestStackBugbot(open, button, label));
+  return button;
 }
 
 function threadsBadge({ total, resolved }) {
@@ -393,6 +404,45 @@ async function requestBugbot(pr, button) {
   } catch (error) {
     button.classList.add('failed');
     button.title = `Failed to comment: ${error.message}`;
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function requestStackBugbot(open, button, label) {
+  const setText = (text) => {
+    button.innerHTML = BUG_ICON;
+    button.append(text);
+  };
+  button.disabled = true;
+  button.classList.remove('done', 'failed');
+  setText(`Commenting on ${open.length} PRs…`);
+  try {
+    const res = await fetch('/api/bugbot/stack', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids: open.map((entry) => entry.id) }),
+    });
+    const body = await res.json();
+    if (!res.ok) throw new Error(body.error ?? res.statusText);
+    const failed = body.results.filter((r) => !r.ok);
+    if (failed.length) {
+      const numbers = failed.map((r) => `#${open.find((entry) => entry.id === r.id).number}`);
+      button.classList.add('failed');
+      button.title = failed.map((r) => r.error).join('\n');
+      setText(`Commented ${open.length - failed.length}/${open.length}, failed on ${numbers.join(', ')}`);
+    } else {
+      button.classList.add('done');
+      setText(`Commented on all ${open.length}`);
+      setTimeout(() => {
+        button.classList.remove('done');
+        setText(label);
+      }, 3000);
+    }
+  } catch (error) {
+    button.classList.add('failed');
+    button.title = error.message;
+    setText('Failed to comment');
   } finally {
     button.disabled = false;
   }
