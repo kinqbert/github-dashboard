@@ -22,12 +22,22 @@ const SECTIONS = {
   ],
 };
 
+// Recently merged PRs, fetched only when the page asks for them.
+const MERGED_SECTIONS = {
+  mine: ["is:pr is:merged archived:false author:@me sort:updated-desc"],
+  reviewing: [
+    "is:pr is:merged archived:false reviewed-by:@me -author:@me sort:updated-desc",
+  ],
+};
+
+const MERGED_LIMIT = 20;
+
 // GitHub's GraphQL API gives up after about 10 seconds and answers with an HTML
 // error page, and the cost grows with every PR in a request. So we search for
 // PR ids first, then fetch the details in small batches in parallel.
 const SEARCH_QUERY = `
-  query ($q: String!) {
-    search(query: $q, type: ISSUE, first: 50) {
+  query ($q: String!, $first: Int = 50) {
+    search(query: $q, type: ISSUE, first: $first) {
       nodes { ... on PullRequest { id } }
     }
   }
@@ -44,6 +54,7 @@ const DETAILS_QUERY = `
         title
         url
         isDraft
+        mergedAt
         headRefName
         createdAt
         updatedAt
@@ -178,6 +189,7 @@ function toPr(node, viewerLogin) {
     repo: node.repository.nameWithOwner,
     author: node.author,
     isDraft: node.isDraft,
+    mergedAt: node.mergedAt,
     branch: node.headRefName,
     createdAt: node.createdAt,
     updatedAt: node.updatedAt,
@@ -232,14 +244,18 @@ function sortPrs(prs) {
   return sorted;
 }
 
-async function fetchSection(key, queries, viewerLogin) {
-  const results = await Promise.all(
-    queries.map((q) =>
-      graphql(SEARCH_QUERY, {
-        q: GITHUB_REPO ? `${q} repo:${GITHUB_REPO}` : q,
-      }),
-    ),
-  );
+function search(q, first) {
+  return graphql(SEARCH_QUERY, {
+    q: GITHUB_REPO ? `${q} repo:${GITHUB_REPO}` : q,
+    first,
+  });
+}
+
+async function fetchSection(key, queries, viewerLogin, mergedQueries = []) {
+  const results = await Promise.all([
+    ...queries.map((q) => search(q)),
+    ...mergedQueries.map((q) => search(q, MERGED_LIMIT)),
+  ]);
   const ids = [
     ...new Set(results.flatMap((r) => r.search.nodes.map((n) => n.id))),
   ];
@@ -268,12 +284,17 @@ function getViewer() {
   return viewerPromise;
 }
 
-async function fetchDashboard() {
+async function fetchDashboard({ merged = false } = {}) {
   const viewer = await getViewer();
   const entries = await Promise.all(
     Object.entries(SECTIONS).map(async ([key, queries]) => [
       key,
-      await fetchSection(key, queries, viewer.login),
+      await fetchSection(
+        key,
+        queries,
+        viewer.login,
+        merged ? MERGED_SECTIONS[key] : [],
+      ),
     ]),
   );
   return {
@@ -353,10 +374,12 @@ async function serveStatic(pathname, res) {
 }
 
 createServer(async (req, res) => {
-  const { pathname } = new URL(req.url, `http://${req.headers.host}`);
+  const { pathname, searchParams } = new URL(req.url, `http://${req.headers.host}`);
   try {
     if (pathname === "/api/prs") {
-      const data = await fetchDashboard();
+      const data = await fetchDashboard({
+        merged: searchParams.get("merged") === "1",
+      });
       res
         .writeHead(200, { "Content-Type": "application/json" })
         .end(JSON.stringify(data));

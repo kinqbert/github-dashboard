@@ -4,6 +4,7 @@ const STACK_COLORS_KEY = 'github-dashboard:stack-colors';
 const COLLAPSED_KEY = 'github-dashboard:collapsed-groups';
 const FILTERS_KEY = 'github-dashboard:filters';
 const COMPACT_KEY = 'github-dashboard:compact';
+const MERGED_KEY = 'github-dashboard:merged-only';
 
 const STACK_PALETTE = [
   '#39c5cf',
@@ -38,11 +39,14 @@ const avatarEl = document.getElementById('avatar');
 const summaryEl = document.getElementById('summary');
 const faviconEl = document.getElementById('favicon');
 const compactBtn = document.getElementById('compact');
+const mergedBtn = document.getElementById('merged-only');
 
 let data = null;
 let loading = false;
 // True when the first load failed, so the page stops showing loading placeholders.
 let loadFailed = false;
+// True when `data` includes merged PRs, which are only fetched in merged-only mode.
+let hasMerged = false;
 
 const REVIEW_LABELS = {
   APPROVED: ['Approved', 'good'],
@@ -96,6 +100,8 @@ let collapsed = readJson(COLLAPSED_KEY) ?? {};
 // Filter key -> true for quick filters that are switched on.
 let activeFilters = readJson(FILTERS_KEY) ?? {};
 let compact = readJson(COMPACT_KEY) ?? false;
+// When on, the lists show only recently merged PRs; the summary stays on open ones.
+let mergedOnly = readJson(MERGED_KEY) ?? false;
 
 function toggleGroup(id) {
   if (collapsed[id]) delete collapsed[id];
@@ -105,7 +111,7 @@ function toggleGroup(id) {
 }
 
 function isUnread(pr) {
-  if (!pr.lastActivityAt) return false;
+  if (!pr.lastActivityAt || pr.mergedAt) return false;
   const seenAt = seen?.[pr.id];
   return !seenAt || pr.lastActivityAt > seenAt;
 }
@@ -127,6 +133,10 @@ function readyToMerge(pr) {
 
 function allPrs() {
   return data ? [...data.mine, ...data.reviewing] : [];
+}
+
+function openPrs(prs) {
+  return prs.filter((pr) => !pr.mergedAt);
 }
 
 // Give every visible stack a color, preferring colors no other visible stack uses.
@@ -252,7 +262,7 @@ function stackBugbotButton(open) {
 }
 
 function threadsBadge({ total, resolved }) {
-  return badge(`${resolved}/${plural(total, 'thread')} resolved`, resolved === total ? 'good' : 'neutral', {
+  return badge(`${resolved}/${plural(total, 'thread')} resolved`, resolved === total ? 'resolved' : 'neutral', {
     title: resolved === total ? 'All review threads resolved' : `${total - resolved} unresolved`,
   });
 }
@@ -266,6 +276,9 @@ function queueBadge({ position, state }) {
 }
 
 function renderBadges(pr, section) {
+  if (pr.mergedAt) {
+    return [badge('Merged', 'merged', { title: `Merged ${new Date(pr.mergedAt).toLocaleString()}` })];
+  }
   const badges = [];
   if (pr.isDraft) badges.push(badge('Draft', 'muted'));
 
@@ -320,7 +333,9 @@ function renderPr(pr, section) {
   const meta = el('div', { className: 'meta' }, [
     el('img', { className: 'author-avatar', src: pr.author?.avatarUrl ?? '', alt: '' }),
     el('span', { textContent: pr.author?.login ?? 'ghost' }),
-    el('span', { textContent: `· updated ${timeAgo(pr.updatedAt)}`, title: new Date(pr.updatedAt).toLocaleString() }),
+    pr.mergedAt
+      ? el('span', { textContent: `· merged ${timeAgo(pr.mergedAt)}`, title: new Date(pr.mergedAt).toLocaleString() })
+      : el('span', { textContent: `· updated ${timeAgo(pr.updatedAt)}`, title: new Date(pr.updatedAt).toLocaleString() }),
     el('span', { className: 'diff' }, [
       el('span', { className: 'add', textContent: `+${pr.additions}` }),
       el('span', { className: 'del', textContent: `−${pr.deletions}` }),
@@ -366,7 +381,7 @@ function renderPr(pr, section) {
       el('span', { className: 'repo', textContent: `${pr.repo} #${pr.number}` }),
       el('span', { className: 'pr-actions' }, [
         news ? el('span', { className: 'whats-new', textContent: news, title: news }) : '',
-        el('span', { className: 'hover-actions' }, [copyBranch, bugbot]),
+        el('span', { className: 'hover-actions' }, pr.mergedAt ? [copyBranch] : [copyBranch, bugbot]),
         tick,
       ]),
     ]),
@@ -483,10 +498,11 @@ function renderSummary() {
     summaryEl.replaceChildren(...(loadFailed ? [] : [skeletonStat(), skeletonStat(), skeletonStat()]));
     return;
   }
-  const waiting = data.reviewing.filter((pr) => pr.reviewRequestedFromMe);
+  const mine = openPrs(data.mine);
+  const waiting = openPrs(data.reviewing).filter((pr) => pr.reviewRequestedFromMe);
   const lines = waiting.reduce((sum, pr) => sum + pr.additions + pr.deletions, 0);
-  const ready = data.mine.filter(readyToMerge).length;
-  const fix = data.mine.filter(needsFix).length;
+  const ready = mine.filter(readyToMerge).length;
+  const fix = mine.filter(needsFix).length;
   const unread = allPrs().filter(isUnread).length;
 
   summaryEl.replaceChildren(
@@ -498,7 +514,7 @@ function renderSummary() {
     ),
     stat(
       'Your open PRs',
-      data.mine.length,
+      mine.length,
       `${ready} ready to merge · ${fix} ${fix === 1 ? 'needs' : 'need'} your fix`,
       fix ? 'bad' : 'good',
     ),
@@ -591,10 +607,15 @@ function isFiltering() {
   return Boolean(filterEl.value.trim()) || Object.values(activeFilters).some(Boolean);
 }
 
+// The section's PRs for the current mode: open ones, or only merged ones.
+function sectionPrs(key) {
+  return data[key].filter((pr) => Boolean(pr.mergedAt) === mergedOnly);
+}
+
 function visiblePrs(key) {
   const query = filterEl.value.trim().toLowerCase();
   const tests = filtersFor(key);
-  return data[key].filter((pr) => matches(pr, query) && tests.every((test) => test(pr)));
+  return sectionPrs(key).filter((pr) => matches(pr, query) && tests.every((test) => test(pr)));
 }
 
 function clearFilters() {
@@ -627,7 +648,8 @@ function renderChips() {
 }
 
 function emptyState(key) {
-  if (data[key].length === 0) {
+  if (sectionPrs(key).length === 0) {
+    if (mergedOnly) return el('li', { className: 'placeholder empty', textContent: 'No merged PRs' });
     return key === 'reviewing'
       ? el('li', { className: 'placeholder empty' }, [
           el('span', { className: 'empty-emoji', textContent: '🎉' }),
@@ -650,20 +672,23 @@ function render() {
     const count = section.querySelector('.count');
     const unreadCount = section.querySelector('.unread-count');
     const markAll = section.querySelector('.mark-all');
-    if (!data) {
+    if (!data || (mergedOnly && !hasMerged)) {
       count.textContent = '';
       unreadCount.textContent = '';
       markAll.disabled = true;
       list.replaceChildren(
         loadFailed
           ? el('li', { className: 'placeholder', textContent: 'Couldn’t load pull requests' })
-          : el('li', { className: 'placeholder' }, [spinner(), 'Loading pull requests…']),
+          : el('li', { className: 'placeholder' }, [
+              spinner(),
+              data ? 'Loading merged pull requests…' : 'Loading pull requests…',
+            ]),
       );
       continue;
     }
     const prs = visiblePrs(key);
     const unread = prs.filter(isUnread).length;
-    count.textContent = isFiltering() ? `${prs.length}/${data[key].length}` : prs.length;
+    count.textContent = isFiltering() ? `${prs.length}/${sectionPrs(key).length}` : prs.length;
     unreadCount.textContent = unread ? `${unread} new` : '';
     markAll.disabled = unread === 0;
     list.replaceChildren(...(prs.length ? groupByAge(prs).flatMap((group) => renderGroup(group, key)) : [emptyState(key)]));
@@ -685,11 +710,13 @@ async function load() {
     loadFailed = false;
     render();
   }
+  const withMerged = mergedOnly;
   try {
-    const res = await fetch('/api/prs');
+    const res = await fetch(withMerged ? '/api/prs?merged=1' : '/api/prs');
     const body = await res.json();
     if (!res.ok) throw new Error(body.error ?? res.statusText);
     data = body;
+    hasMerged = withMerged;
     avatarEl.src = data.viewer.avatarUrl;
     statusEl.textContent = `Updated ${new Date(data.fetchedAt).toLocaleTimeString()}`;
     assignStackColors();
@@ -707,6 +734,8 @@ async function load() {
     refreshBtn.disabled = false;
     refreshBtn.classList.remove('spinning');
   }
+  // The toggle flipped while this load was running.
+  if (mergedOnly && !withMerged) load();
 }
 
 function isStale() {
@@ -733,6 +762,16 @@ document.addEventListener('visibilitychange', () => {
   if (!document.hidden && isStale()) load();
 });
 
+mergedBtn.addEventListener('click', () => {
+  mergedOnly = !mergedOnly;
+  writeJson(MERGED_KEY, mergedOnly);
+  mergedBtn.ariaPressed = String(mergedOnly);
+  // Open PRs are always in `data`, so only switching to merged-only needs a fetch.
+  render();
+  if (mergedOnly && !hasMerged) load();
+});
+
+mergedBtn.ariaPressed = String(mergedOnly);
 applyCompact();
 render();
 load();

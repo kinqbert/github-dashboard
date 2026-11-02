@@ -10,6 +10,7 @@
   --good: #1a7f37;
   --bad: #cf222e;
   --pending: #9a6700;
+  --merged: #8250df;
   --stack: #1b7c83;
   --shadow-sm: 0 1px 2px rgb(31 35 40 / 0.05);
   --shadow: 0 2px 4px rgb(31 35 40 / 0.06), 0 8px 24px rgb(31 35 40 / 0.06);
@@ -31,6 +32,7 @@
     --good: #3fb950;
     --bad: #f85149;
     --pending: #d29922;
+    --merged: #a371f7;
     --stack: #39c5cf;
     --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
     --shadow: 0 2px 4px rgb(0 0 0 / 0.35), 0 10px 28px rgb(0 0 0 / 0.3);
@@ -321,7 +323,7 @@ main {
   padding: 20px 24px 0;
 }
 
-#compact {
+#merged-only {
   margin-left: auto;
 }
 
@@ -713,6 +715,7 @@ h2 {
 }
 
 .badge.good::before,
+.badge.resolved::before,
 .badge.bad::before,
 .badge.pending::before {
   content: '';
@@ -734,8 +737,17 @@ h2 {
   color: var(--bad);
 }
 
+/* All threads resolved: blue, so it doesn't read as "Ready to merge". */
+.badge.resolved {
+  color: var(--link);
+}
+
 .badge.pending {
   color: var(--pending);
+}
+
+.badge.merged {
+  color: var(--merged);
 }
 
 .badge.neutral,
