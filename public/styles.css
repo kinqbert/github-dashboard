@@ -12,6 +12,7 @@
   --pending: #9a6700;
   --merged: #8250df;
   --stack: #1b7c83;
+  --star: #d4a72c;
   --shadow-sm: 0 1px 2px rgb(31 35 40 / 0.05);
   --shadow: 0 2px 4px rgb(31 35 40 / 0.06), 0 8px 24px rgb(31 35 40 / 0.06);
   --radius: 6px;
@@ -34,6 +35,7 @@
     --pending: #d29922;
     --merged: #a371f7;
     --stack: #39c5cf;
+    --star: #e3b341;
     --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
     --shadow: 0 2px 4px rgb(0 0 0 / 0.35), 0 10px 28px rgb(0 0 0 / 0.3);
     --bone: #222a35;
@@ -593,14 +595,14 @@ h2 {
 .pr:hover .hover-actions,
 .pr:focus-within .hover-actions,
 .hover-actions:has(.bugbot.done, .bugbot.failed) {
-  width: 54px;
+  width: calc(var(--count, 2) * 30px - 6px);
   margin-left: 0;
   opacity: 1;
 }
 
 @media (hover: none) {
   .hover-actions {
-    width: 54px;
+    width: calc(var(--count, 2) * 30px - 6px);
     margin-left: 0;
     opacity: 1;
   }
@@ -642,6 +644,39 @@ h2 {
 .hover-actions .pr-action.failed {
   color: var(--bad);
   border-color: currentColor;
+}
+
+/* Starred state inside the hover button: yellow, filled. */
+.hover-actions .pr-action.star.starred,
+.hover-actions .pr-action.star:hover:not(:disabled) {
+  color: var(--star);
+}
+
+.pr-action.star.starred svg {
+  fill: currentColor;
+}
+
+/* Small yellow star shown at rest on starred cards. Hidden while the card is
+   hovered, since the star button in .hover-actions takes over. */
+.star-mark {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--star);
+}
+
+.star-mark svg {
+  fill: currentColor;
+}
+
+.pr:hover .star-mark,
+.pr:focus-within .star-mark {
+  display: none;
+}
+
+@media (hover: none) {
+  .star-mark {
+    display: none;
+  }
 }
 
 .repo {

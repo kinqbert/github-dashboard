@@ -5,6 +5,7 @@ const COLLAPSED_KEY = 'github-dashboard:collapsed-groups';
 const FILTERS_KEY = 'github-dashboard:filters';
 const COMPACT_KEY = 'github-dashboard:compact';
 const MERGED_KEY = 'github-dashboard:merged-only';
+const STARRED_KEY = 'github-dashboard:starred';
 
 const STACK_PALETTE = [
   '#39c5cf',
@@ -31,6 +32,9 @@ const BUG_ICON =
 
 const BRANCH_ICON =
   '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><circle cx="4.5" cy="3.5" r="1.75"/><circle cx="4.5" cy="12.5" r="1.75"/><circle cx="11.5" cy="5" r="1.75"/><path d="M4.5 5.25v5.5M11.5 6.75c0 3-7 1.5-7 4"/></svg>';
+
+const STAR_ICON =
+  '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="M8 1.75 9.9 5.6l4.25.62-3.08 3 .73 4.23L8 11.45l-3.8 2 .73-4.23-3.08-3 4.25-.62Z"/></svg>';
 
 const statusEl = document.getElementById('status');
 const refreshBtn = document.getElementById('refresh');
@@ -102,6 +106,15 @@ let activeFilters = readJson(FILTERS_KEY) ?? {};
 let compact = readJson(COMPACT_KEY) ?? false;
 // When on, the lists show only recently merged PRs; the summary stays on open ones.
 let mergedOnly = readJson(MERGED_KEY) ?? false;
+// PR id -> true for PRs the user has starred.
+let starred = readJson(STARRED_KEY) ?? {};
+
+function toggleStar(pr) {
+  if (starred[pr.id]) delete starred[pr.id];
+  else starred[pr.id] = true;
+  writeJson(STARRED_KEY, starred);
+  render();
+}
 
 function toggleGroup(id) {
   if (collapsed[id]) delete collapsed[id];
@@ -376,13 +389,29 @@ function renderPr(pr, section) {
   });
   copyBranch.addEventListener('click', () => copyBranchName(pr, copyBranch));
 
+  const isStarred = Boolean(starred[pr.id]);
+  const star = el('button', {
+    type: 'button',
+    className: `pr-action star${isStarred ? ' starred' : ''}`,
+    title: isStarred ? 'Unstar' : 'Star',
+    ariaLabel: isStarred ? 'Unstar' : 'Star',
+    ariaPressed: String(isStarred),
+    innerHTML: STAR_ICON,
+  });
+  star.addEventListener('click', () => toggleStar(pr));
+
+  const actions = pr.mergedAt ? [star, copyBranch] : [star, copyBranch, bugbot];
+  const hoverActions = el('span', { className: 'hover-actions' }, actions);
+  hoverActions.style.setProperty('--count', actions.length);
+
   const item = el('li', { className: 'pr' }, [
     el('div', { className: 'pr-top' }, [
       el('span', { className: 'repo', textContent: `${pr.repo} #${pr.number}` }),
       el('span', { className: 'pr-actions' }, [
         news ? el('span', { className: 'whats-new', textContent: news, title: news }) : '',
-        el('span', { className: 'hover-actions' }, pr.mergedAt ? [copyBranch] : [copyBranch, bugbot]),
+        hoverActions,
         tick,
+        isStarred ? el('span', { className: 'star-mark', title: 'Starred', innerHTML: STAR_ICON }) : '',
       ]),
     ]),
     el('a', { className: 'title', href: pr.url, target: '_blank', rel: 'noopener', textContent: pr.title }),
