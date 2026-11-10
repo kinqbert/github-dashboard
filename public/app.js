@@ -30,8 +30,8 @@ const CHECK_ICON =
 const BUG_ICON =
   '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M5.5 4.5a2.5 2.5 0 0 1 5 0"/><rect x="4.5" y="4.5" width="7" height="9" rx="3.5"/><path d="M8 7v6.5M1.75 8.5h2.75M11.5 8.5h2.75M2.5 4.75 4.75 6M13.5 4.75 11.25 6M2.5 13.25l2.25-1.25M13.5 13.25l-2.25-1.25"/></svg>';
 
-const BRANCH_ICON =
-  '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><circle cx="4.5" cy="3.5" r="1.75"/><circle cx="4.5" cy="12.5" r="1.75"/><circle cx="11.5" cy="5" r="1.75"/><path d="M4.5 5.25v5.5M11.5 6.75c0 3-7 1.5-7 4"/></svg>';
+const LINK_ICON =
+  '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M6.75 9.25a2.75 2.75 0 0 0 3.9 0l2.1-2.1a2.75 2.75 0 0 0-3.9-3.9l-.85.85"/><path d="M9.25 6.75a2.75 2.75 0 0 0-3.9 0l-2.1 2.1a2.75 2.75 0 0 0 3.9 3.9l.85-.85"/></svg>';
 
 const STAR_ICON =
   '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="M8 1.75 9.9 5.6l4.25.62-3.08 3 .73 4.23L8 11.45l-3.8 2 .73-4.23-3.08-3 4.25-.62Z"/></svg>';
@@ -109,11 +109,20 @@ let mergedOnly = readJson(MERGED_KEY) ?? false;
 // PR id -> true for PRs the user has starred.
 let starred = readJson(STARRED_KEY) ?? {};
 
-function toggleStar(pr) {
+// Updates the button in place instead of re-rendering, so the card's hover
+// state and transitions aren't reset by the click.
+function toggleStar(pr, button) {
   if (starred[pr.id]) delete starred[pr.id];
   else starred[pr.id] = true;
   writeJson(STARRED_KEY, starred);
-  render();
+  setStarState(button, Boolean(starred[pr.id]));
+}
+
+function setStarState(button, isStarred) {
+  button.classList.toggle('starred', isStarred);
+  button.title = isStarred ? 'Unstar' : 'Star';
+  button.ariaLabel = button.title;
+  button.ariaPressed = String(isStarred);
 }
 
 function toggleGroup(id) {
@@ -380,38 +389,27 @@ function renderPr(pr, section) {
   });
   bugbot.addEventListener('click', () => requestBugbot(pr, bugbot));
 
-  const copyBranch = el('button', {
+  const copyLink = el('button', {
     type: 'button',
-    className: 'pr-action copy-branch',
-    title: `Copy branch name: ${pr.branch}`,
-    ariaLabel: 'Copy branch name',
-    innerHTML: BRANCH_ICON,
+    className: 'pr-action copy-link',
+    title: 'Copy PR link',
+    ariaLabel: 'Copy PR link',
+    innerHTML: LINK_ICON,
   });
-  copyBranch.addEventListener('click', () => copyBranchName(pr, copyBranch));
+  copyLink.addEventListener('click', () => copyPrLink(pr, copyLink));
 
-  const isStarred = Boolean(starred[pr.id]);
-  const star = el('button', {
-    type: 'button',
-    className: `pr-action star${isStarred ? ' starred' : ''}`,
-    title: isStarred ? 'Unstar' : 'Star',
-    ariaLabel: isStarred ? 'Unstar' : 'Star',
-    ariaPressed: String(isStarred),
-    innerHTML: STAR_ICON,
-  });
-  star.addEventListener('click', () => toggleStar(pr));
-
-  const actions = pr.mergedAt ? [star, copyBranch] : [star, copyBranch, bugbot];
-  const hoverActions = el('span', { className: 'hover-actions' }, actions);
-  hoverActions.style.setProperty('--count', actions.length);
+  const star = el('button', { type: 'button', className: 'pr-action star', innerHTML: STAR_ICON });
+  setStarState(star, Boolean(starred[pr.id]));
+  star.addEventListener('click', () => toggleStar(pr, star));
 
   const item = el('li', { className: 'pr' }, [
     el('div', { className: 'pr-top' }, [
       el('span', { className: 'repo', textContent: `${pr.repo} #${pr.number}` }),
       el('span', { className: 'pr-actions' }, [
         news ? el('span', { className: 'whats-new', textContent: news, title: news }) : '',
-        hoverActions,
+        el('span', { className: 'hover-actions' }, pr.mergedAt ? [copyLink] : [copyLink, bugbot]),
         tick,
-        isStarred ? el('span', { className: 'star-mark', title: 'Starred', innerHTML: STAR_ICON }) : '',
+        star,
       ]),
     ]),
     el('a', { className: 'title', href: pr.url, target: '_blank', rel: 'noopener', textContent: pr.title }),
@@ -492,9 +490,9 @@ async function requestStackBugbot(open, button, label) {
   }
 }
 
-async function copyBranchName(pr, button) {
+async function copyPrLink(pr, button) {
   try {
-    await navigator.clipboard.writeText(pr.branch);
+    await navigator.clipboard.writeText(pr.url);
     button.classList.add('done');
     button.innerHTML = CHECK_ICON;
   } catch {
@@ -502,7 +500,7 @@ async function copyBranchName(pr, button) {
   }
   setTimeout(() => {
     button.classList.remove('done', 'failed');
-    button.innerHTML = BRANCH_ICON;
+    button.innerHTML = LINK_ICON;
   }, 1500);
 }
 

@@ -519,7 +519,6 @@ h2 {
   justify-content: center;
   width: 24px;
   height: 24px;
-  margin-right: -6px;
   padding: 0;
   border-radius: 999px;
   color: var(--muted);
@@ -540,18 +539,18 @@ h2 {
 }
 
 .pr:hover .mark-read,
-.pr:focus-within .mark-read {
+.pr:has(:focus-visible) .mark-read {
   border-color: var(--border-strong);
   background: var(--panel);
 }
 
 .pr:hover .mark-read .unread-dot,
-.pr:focus-within .mark-read .unread-dot {
+.pr:has(:focus-visible) .mark-read .unread-dot {
   display: none;
 }
 
 .pr:hover .mark-read svg,
-.pr:focus-within .mark-read svg {
+.pr:has(:focus-visible) .mark-read svg {
   display: block;
 }
 
@@ -593,16 +592,16 @@ h2 {
 }
 
 .pr:hover .hover-actions,
-.pr:focus-within .hover-actions,
+.pr:has(:focus-visible) .hover-actions,
 .hover-actions:has(.bugbot.done, .bugbot.failed) {
-  width: calc(var(--count, 2) * 30px - 6px);
+  width: 54px;
   margin-left: 0;
   opacity: 1;
 }
 
 @media (hover: none) {
   .hover-actions {
-    width: calc(var(--count, 2) * 30px - 6px);
+    width: 54px;
     margin-left: 0;
     opacity: 1;
   }
@@ -646,9 +645,36 @@ h2 {
   border-color: currentColor;
 }
 
-/* Starred state inside the hover button: yellow, filled. */
-.hover-actions .pr-action.star.starred,
-.hover-actions .pr-action.star:hover:not(:disabled) {
+/* Star at the far right. At rest it's a bare yellow star on starred cards and
+   collapses to nothing otherwise; hovering or focusing the card reveals it as a
+   bordered button like the other actions. */
+.pr-action.star {
+  flex-shrink: 0;
+  justify-content: center;
+  width: 0;
+  height: 24px;
+  margin: 0 -6px 0 -8px;
+  padding: 0;
+  overflow: hidden;
+  opacity: 0;
+  border-radius: 999px;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid transparent;
+  box-shadow: none;
+  transition:
+    width 0.25s ease,
+    margin-left 0.25s ease,
+    opacity 0.2s ease,
+    color 0.15s,
+    background 0.15s,
+    border-color 0.15s;
+}
+
+.pr-action.star.starred {
+  width: 24px;
+  margin-left: 0;
+  opacity: 1;
   color: var(--star);
 }
 
@@ -656,26 +682,34 @@ h2 {
   fill: currentColor;
 }
 
-/* Small yellow star shown at rest on starred cards. Hidden while the card is
-   hovered, since the star button in .hover-actions takes over. */
-.star-mark {
-  display: inline-flex;
-  flex-shrink: 0;
+.pr:hover .pr-action.star,
+.pr:has(:focus-visible) .pr-action.star {
+  width: 24px;
+  margin-left: 0;
+  opacity: 1;
+  background: var(--panel);
+  border-color: var(--border-strong);
+}
+
+.pr-action.star:hover:not(:disabled) {
   color: var(--star);
-}
-
-.star-mark svg {
-  fill: currentColor;
-}
-
-.pr:hover .star-mark,
-.pr:focus-within .star-mark {
-  display: none;
+  background: var(--panel);
+  border-color: var(--text);
 }
 
 @media (hover: none) {
-  .star-mark {
-    display: none;
+  .pr-action.star {
+    width: 24px;
+    margin-left: 0;
+    opacity: 1;
+    background: var(--panel);
+    border-color: var(--border-strong);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pr-action.star {
+    transition: none;
   }
 }
 
