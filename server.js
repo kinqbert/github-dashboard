@@ -43,7 +43,7 @@ const SEARCH_QUERY = `
   }
 `;
 
-const DETAILS_BATCH_SIZE = 10;
+const DETAILS_BATCH_SIZE = 5;
 
 const DETAILS_QUERY = `
   query ($ids: [ID!]!, $reviewing: Boolean!) {
