@@ -1,4 +1,6 @@
 const AUTO_REFRESH_MS = 15 * 60 * 1000;
+// Coming back to the tab refetches if the data is older than this.
+const FOCUS_REFRESH_MS = 60 * 1000;
 const SEEN_KEY = 'github-dashboard:seen';
 const STACK_COLORS_KEY = 'github-dashboard:stack-colors';
 const COLLAPSED_KEY = 'github-dashboard:collapsed-groups';
@@ -812,8 +814,8 @@ async function load() {
   if (mergedOnly && !withMerged) load();
 }
 
-function isStale() {
-  return !data || Date.now() - new Date(data.fetchedAt).getTime() >= AUTO_REFRESH_MS;
+function isStale(maxAgeMs) {
+  return !data || Date.now() - new Date(data.fetchedAt).getTime() >= maxAgeMs;
 }
 
 for (const section of document.querySelectorAll('section[data-section]')) {
@@ -832,9 +834,11 @@ compactBtn.addEventListener('click', () => {
 setInterval(() => {
   load();
 }, AUTO_REFRESH_MS);
-document.addEventListener('visibilitychange', () => {
-  if (!document.hidden && isStale()) load();
-});
+function refreshOnReturn() {
+  if (!document.hidden && isStale(FOCUS_REFRESH_MS)) load();
+}
+document.addEventListener('visibilitychange', refreshOnReturn);
+window.addEventListener('focus', refreshOnReturn);
 
 mergedBtn.addEventListener('click', () => {
   mergedOnly = !mergedOnly;
