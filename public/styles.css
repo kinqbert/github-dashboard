@@ -978,9 +978,19 @@ button .spinner {
   margin-top: 0;
 }
 
-/* A collapsed stack's first card keeps its rounded bottom and sits above the fold. */
-.pr.in-stack.stack-folded {
+/* A collapsed stack's first card sits above its fold, and like any card rises over
+   the cards below while hovered or focused, so its stack popover isn't covered. */
+.pr.stack-folded {
   z-index: 1;
+}
+
+.pr.stack-folded:hover,
+.pr.stack-folded:focus-within {
+  z-index: 2;
+}
+
+/* ...and keeps its rounded bottom. */
+.pr.in-stack.stack-folded {
   border-bottom-left-radius: var(--radius);
   border-bottom-right-radius: var(--radius);
 }
