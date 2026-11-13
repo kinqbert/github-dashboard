@@ -59,7 +59,7 @@ body {
 header {
   position: sticky;
   top: 0;
-  z-index: 2;
+  z-index: 10;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -730,10 +730,11 @@ h2 {
   flex-shrink: 1;
 }
 
-/* Keeps a card's stack popover above the cards below it. */
+/* Keeps a card's stack popover above the cards below it, including a collapsed
+   stack's card, which always sits at z-index 1 over its fold. */
 .pr:hover,
 .pr:focus-within {
-  z-index: 1;
+  z-index: 2;
 }
 
 .title {
@@ -946,7 +947,7 @@ button .spinner {
   box-shadow: var(--shadow);
   /* Lifting one card would pull it out of the block. */
   transform: none;
-  z-index: 1;
+  z-index: 2;
 }
 
 /* Cancels the 8px list gap and overlaps the borders so cards share one line. */
@@ -1043,7 +1044,17 @@ button .spinner {
   transform: rotate(-45deg);
 }
 
-.stack-fold-nums {
+.stack-fold-btn > span {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+/* A long stack's numbers get cut off with an ellipsis instead of overflowing. */
+.stack-fold-btn > .stack-fold-nums {
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
