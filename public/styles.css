@@ -977,41 +977,110 @@ button .spinner {
   margin-top: 0;
 }
 
-/* "Show N more in stack" / "Collapse stack", next to the repo name on a stack's first card. */
-.stack-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 1px 6px;
-  border: none;
-  border-radius: 6px;
-  background: none;
+/* A collapsed stack's first card keeps its rounded bottom and sits above the fold. */
+.pr.in-stack.stack-folded {
+  z-index: 1;
+  border-bottom-left-radius: var(--radius);
+  border-bottom-right-radius: var(--radius);
+}
+
+/* The strip under a stack that collapses or expands it. */
+.stack-fold {
+  position: relative;
+  z-index: 0;
+}
+
+.stack-fold-btn {
+  width: 100%;
+  gap: 8px;
+  border-top: none;
+  border-radius: 0 0 var(--radius) var(--radius);
   box-shadow: none;
-  color: var(--muted);
-  font-size: 11.5px;
-  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 500;
 }
 
-.stack-toggle:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--muted) 12%, transparent);
-  color: var(--text);
+.stack-fold + .pr.stack-start {
+  margin-top: 0;
 }
 
-.stack-toggle.collapsed .chevron {
+/* Collapsed: a narrower sheet tucked under the card, with a second one under it, like a deck. */
+.stack-fold.collapsed {
+  margin: calc(-8px - var(--radius)) 10px 0;
+}
+
+.stack-fold.collapsed:not(:last-child) {
+  margin-bottom: 13px;
+}
+
+.stack-fold.collapsed .stack-fold-btn {
+  padding: calc(var(--radius) + 5px) 12px 5px;
+  background: color-mix(in srgb, var(--stack) 9%, var(--panel));
+  color: var(--stack);
+  box-shadow: var(--shadow-sm);
+}
+
+.stack-fold.collapsed .stack-fold-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--stack) 16%, var(--panel));
+  border-color: color-mix(in srgb, var(--stack) 40%, var(--border));
+}
+
+.stack-fold.collapsed::after {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  left: 10px;
+  right: 10px;
+  bottom: -5px;
+  height: 12px;
+  border: 1px solid var(--border);
+  border-top: none;
+  border-radius: 0 0 var(--radius) var(--radius);
+  background: color-mix(in srgb, var(--stack) 5%, var(--panel));
+}
+
+.stack-fold.collapsed .chevron {
   transform: rotate(-45deg);
 }
 
-/* Keeps the toggle beside the repo name instead of centered between it and the actions. */
-.pr-top .stack-toggle + .pr-actions {
-  margin-left: auto;
+.stack-fold-nums {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
 }
 
-/* Compact cards hide the repo line, so the toggle sits under the meta row. */
-.compact .stack-toggle {
-  grid-column: 1 / -1;
-  grid-row: 3;
-  justify-self: start;
-  margin: 4px 0 0 -6px;
+/* Expanded: a slim footer joined to the stack's last card, rail included. */
+.stack-fold.expanded {
+  margin-top: -9px;
+}
+
+.stack-fold.expanded:not(:last-child) {
+  margin-bottom: 8px;
+}
+
+.stack-fold.expanded .stack-fold-btn {
+  padding: 4px 16px;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+.stack-fold.expanded .stack-fold-btn:hover:not(:disabled) {
+  color: var(--stack);
+}
+
+.stack-fold.expanded::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: var(--radius);
+  border-bottom-left-radius: var(--radius);
+  background: linear-gradient(to right, var(--stack) 4px, transparent 4px);
+  pointer-events: none;
+}
+
+.stack-fold.expanded .chevron {
+  transform: translateY(1px) rotate(-135deg);
 }
 
 /* The "Stack 2/3" chip, first in the badges row; hovering or focusing it opens the list of the stack's PRs. */

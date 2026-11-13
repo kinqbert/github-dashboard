@@ -1,4 +1,4 @@
-const AUTO_REFRESH_MS = 30 * 1000;
+const AUTO_REFRESH_MS = 15 * 60 * 1000;
 const SEEN_KEY = 'github-dashboard:seen';
 const STACK_COLORS_KEY = 'github-dashboard:stack-colors';
 const COLLAPSED_KEY = 'github-dashboard:collapsed-groups';
@@ -636,23 +636,33 @@ function renderGroup({ label, prs }, section) {
     const shown = isStackCollapsed ? [first] : run;
     const cards = shown.map((pr) => renderPr(pr, section));
     cards[0].classList.add('stack-start');
-    cards.at(-1).classList.add('stack-end');
-    if (run.length > 1) cards[0].querySelector('.repo').after(stackToggle(first.stack.key, run.slice(1), isStackCollapsed));
+    if (run.length === 1) cards[0].classList.add('stack-end');
+    else if (isStackCollapsed) cards[0].classList.add('stack-folded');
+    if (run.length > 1) cards.push(stackFold(first, run.slice(1), isStackCollapsed));
     return cards;
   });
   return [header, ...items];
 }
 
-// Next to the repo name on a stack's first card: hides or shows the rest of the stack.
-function stackToggle(key, rest, isCollapsed) {
+// The strip under a stack. Collapsed, it peeks out from under the first card like a
+// deck and lists the hidden PRs; expanded, it closes the stack's block as a footer.
+function stackFold(first, rest, isCollapsed) {
   const unread = rest.filter(isUnread).length;
-  const toggle = el('button', { type: 'button', className: `stack-toggle${isCollapsed ? ' collapsed' : ''}`, ariaExpanded: String(!isCollapsed) }, [
+  const label = isCollapsed
+    ? [
+        el('span', { textContent: `${rest.length} more in stack` }),
+        el('span', { className: 'stack-fold-nums', textContent: rest.map((pr) => `#${pr.number}`).join(' ') }),
+        unread ? el('span', { className: 'age-unread', textContent: `${unread} new` }) : '',
+      ]
+    : [el('span', { textContent: 'Collapse stack' })];
+  const button = el('button', { type: 'button', className: 'stack-fold-btn', ariaExpanded: String(!isCollapsed) }, [
     el('span', { className: 'chevron', ariaHidden: 'true' }),
-    el('span', { textContent: isCollapsed ? `Show ${rest.length} more in stack` : 'Collapse stack' }),
-    isCollapsed && unread ? el('span', { className: 'age-unread', textContent: `${unread} new` }) : '',
+    ...label,
   ]);
-  toggle.addEventListener('click', () => toggleStack(key));
-  return toggle;
+  button.addEventListener('click', () => toggleStack(first.stack.key));
+  const fold = el('li', { className: `stack-fold ${isCollapsed ? 'collapsed' : 'expanded'}` }, [button]);
+  fold.style.setProperty('--stack', STACK_PALETTE[stackColors[first.stack.key]]);
+  return fold;
 }
 
 function matches(pr, query) {
@@ -820,7 +830,7 @@ compactBtn.addEventListener('click', () => {
   applyCompact();
 });
 setInterval(() => {
-  if (!document.hidden) load();
+  load();
 }, AUTO_REFRESH_MS);
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden && isStale()) load();
