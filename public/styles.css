@@ -977,6 +977,43 @@ button .spinner {
   margin-top: 0;
 }
 
+/* "Show N more in stack" / "Collapse stack", next to the repo name on a stack's first card. */
+.stack-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 1px 6px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  box-shadow: none;
+  color: var(--muted);
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+.stack-toggle:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--muted) 12%, transparent);
+  color: var(--text);
+}
+
+.stack-toggle.collapsed .chevron {
+  transform: rotate(-45deg);
+}
+
+/* Keeps the toggle beside the repo name instead of centered between it and the actions. */
+.pr-top .stack-toggle + .pr-actions {
+  margin-left: auto;
+}
+
+/* Compact cards hide the repo line, so the toggle sits under the meta row. */
+.compact .stack-toggle {
+  grid-column: 1 / -1;
+  grid-row: 3;
+  justify-self: start;
+  margin: 4px 0 0 -6px;
+}
+
 /* The "Stack 2/3" chip, first in the badges row; hovering or focusing it opens the list of the stack's PRs. */
 .stack {
   position: relative;

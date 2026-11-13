@@ -6,6 +6,7 @@ const FILTERS_KEY = 'github-dashboard:filters';
 const COMPACT_KEY = 'github-dashboard:compact';
 const MERGED_KEY = 'github-dashboard:merged-only';
 const STARRED_KEY = 'github-dashboard:starred';
+const COLLAPSED_STACKS_KEY = 'github-dashboard:collapsed-stacks';
 
 const STACK_PALETTE = [
   '#39c5cf',
@@ -108,6 +109,8 @@ let compact = readJson(COMPACT_KEY) ?? false;
 let mergedOnly = readJson(MERGED_KEY) ?? false;
 // PR id -> true for PRs the user has starred.
 let starred = readJson(STARRED_KEY) ?? {};
+// Stack key -> true for stacks the user has collapsed down to their first card.
+let collapsedStacks = readJson(COLLAPSED_STACKS_KEY) ?? {};
 
 // Updates the button in place instead of re-rendering, so the card's hover
 // state and transitions aren't reset by the click.
@@ -123,6 +126,13 @@ function setStarState(button, isStarred) {
   button.title = isStarred ? 'Unstar' : 'Star';
   button.ariaLabel = button.title;
   button.ariaPressed = String(isStarred);
+}
+
+function toggleStack(key) {
+  if (collapsedStacks[key]) delete collapsedStacks[key];
+  else collapsedStacks[key] = true;
+  writeJson(COLLAPSED_STACKS_KEY, collapsedStacks);
+  render();
 }
 
 function toggleGroup(id) {
@@ -180,6 +190,9 @@ function assignStackColors() {
   }
   stackColors = next;
   writeJson(STACK_COLORS_KEY, stackColors);
+  // Drop collapsed state for stacks that are gone.
+  collapsedStacks = Object.fromEntries(Object.keys(collapsedStacks).filter((key) => keys.has(key)).map((key) => [key, true]));
+  writeJson(COLLAPSED_STACKS_KEY, collapsedStacks);
 }
 
 function duration(iso) {
@@ -609,13 +622,37 @@ function renderGroup({ label, prs }, section) {
   const header = el('li', { className: `age-header${isCollapsed ? ' collapsed' : ''}` }, [toggle]);
   if (isCollapsed) return [header];
   const ordered = section === 'mine' ? sortByUrgency(prs) : prs;
-  const items = ordered.map((pr, i) => {
-    const item = renderPr(pr, section);
-    if (pr.stack && ordered[i - 1]?.stack?.key !== pr.stack.key) item.classList.add('stack-start');
-    if (pr.stack && ordered[i + 1]?.stack?.key !== pr.stack.key) item.classList.add('stack-end');
-    return item;
+  // Consecutive PRs of one stack form a run; a collapsed run shows only its first card.
+  const runs = [];
+  for (const pr of ordered) {
+    const last = runs.at(-1);
+    if (pr.stack && last?.[0].stack?.key === pr.stack.key) last.push(pr);
+    else runs.push([pr]);
+  }
+  const items = runs.flatMap((run) => {
+    const [first] = run;
+    if (!first.stack) return [renderPr(first, section)];
+    const isStackCollapsed = run.length > 1 && Boolean(collapsedStacks[first.stack.key]);
+    const shown = isStackCollapsed ? [first] : run;
+    const cards = shown.map((pr) => renderPr(pr, section));
+    cards[0].classList.add('stack-start');
+    cards.at(-1).classList.add('stack-end');
+    if (run.length > 1) cards[0].querySelector('.repo').after(stackToggle(first.stack.key, run.slice(1), isStackCollapsed));
+    return cards;
   });
   return [header, ...items];
+}
+
+// Next to the repo name on a stack's first card: hides or shows the rest of the stack.
+function stackToggle(key, rest, isCollapsed) {
+  const unread = rest.filter(isUnread).length;
+  const toggle = el('button', { type: 'button', className: `stack-toggle${isCollapsed ? ' collapsed' : ''}`, ariaExpanded: String(!isCollapsed) }, [
+    el('span', { className: 'chevron', ariaHidden: 'true' }),
+    el('span', { textContent: isCollapsed ? `Show ${rest.length} more in stack` : 'Collapse stack' }),
+    isCollapsed && unread ? el('span', { className: 'age-unread', textContent: `${unread} new` }) : '',
+  ]);
+  toggle.addEventListener('click', () => toggleStack(key));
+  return toggle;
 }
 
 function matches(pr, query) {
